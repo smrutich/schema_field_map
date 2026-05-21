@@ -1,0 +1,35 @@
+[
+  {
+    "source_field": "job_lvl_cd",
+    "source_table": "emp_master",
+    "destination_field": "employment.jobLevel",
+    "confidence": 0.62,
+    "reasoning": "Weak match based on partial name similarity",
+    "candidate_alternatives": [
+      {
+        "destination_field": "employment.status",
+        "hybrid_score": 0.46,
+        "retrieval_confidence_prior": "LOW"
+      },
+      {
+        "destination_field": "employeeCode",
+        "hybrid_score": 0.386,
+        "retrieval_confidence_prior": "LOW"
+      }
+    ]
+  },
+  {
+    "source_field": "rec_stat",
+    "source_table": "emp_master",
+    "destination_field": "employment.status",
+    "confidence": 0.7,
+    "reasoning": "Code field matches status but low embedding score",
+    "candidate_alternatives": [
+      {
+        "destination_field": "employment.endDate",
+        "hybrid_score": 0.424,
+        "retrieval_confidence_prior": "LOW"
+      }
+    ]
+  }
+]

@@ -365,7 +365,6 @@ After profiling, update each `SourceField.text_repr` to include `business_meanin
 `emp_cd` with comment `human-readable employee code` + profile keywords `["employee identifier", "HR code", "staff number"]` will embed much closer to `employeeCode` than the raw field name alone would.
 
 ---
-
 ## Step 7 — Node: `embed_destination_fields`
 
 **LLM calls: None**
