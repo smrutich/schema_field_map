@@ -1,0 +1,274 @@
+{
+  "database": "legacy_hrm",
+  "type": "MySQL (Relational)",
+  "tables": {
+    "emp_master": [
+      {
+        "field_name": "emp_id",
+        "sql_type": "INT",
+        "nullable": false,
+        "constraints": [
+          "PRIMARY KEY"
+        ],
+        "comment": null
+      },
+      {
+        "field_name": "emp_cd",
+        "sql_type": "VARCHAR(20)",
+        "nullable": false,
+        "constraints": [
+          "UNIQUE"
+        ],
+        "comment": "human-readable employee code"
+      },
+      {
+        "field_name": "f_name",
+        "sql_type": "VARCHAR(50)",
+        "nullable": false,
+        "constraints": [],
+        "comment": null
+      },
+      {
+        "field_name": "l_name",
+        "sql_type": "VARCHAR(50)",
+        "nullable": false,
+        "constraints": [],
+        "comment": null
+      },
+      {
+        "field_name": "dob",
+        "sql_type": "DATE",
+        "nullable": true,
+        "constraints": [],
+        "comment": null
+      },
+      {
+        "field_name": "hire_dt",
+        "sql_type": "DATETIME",
+        "nullable": true,
+        "constraints": [],
+        "comment": null
+      },
+      {
+        "field_name": "term_dt",
+        "sql_type": "DATETIME",
+        "nullable": true,
+        "constraints": [],
+        "comment": "null if still active"
+      },
+      {
+        "field_name": "dept_id",
+        "sql_type": "INT",
+        "nullable": true,
+        "constraints": [
+          "FK -> dept_info.dept_id"
+        ],
+        "comment": null
+      },
+      {
+        "field_name": "mgr_emp_id",
+        "sql_type": "INT",
+        "nullable": true,
+        "constraints": [
+          "FK -> emp_master.emp_id"
+        ],
+        "comment": null
+      },
+      {
+        "field_name": "job_lvl_cd",
+        "sql_type": "VARCHAR(10)",
+        "nullable": true,
+        "constraints": [],
+        "comment": "e.g. L1, L2, IC3, M1"
+      },
+      {
+        "field_name": "base_sal",
+        "sql_type": "DECIMAL(12,2)",
+        "nullable": true,
+        "constraints": [],
+        "comment": null
+      },
+      {
+        "field_name": "sal_currency",
+        "sql_type": "CHAR(3)",
+        "nullable": true,
+        "constraints": [],
+        "comment": "ISO 4217, e.g. USD"
+      },
+      {
+        "field_name": "work_email",
+        "sql_type": "VARCHAR(120)",
+        "nullable": true,
+        "constraints": [
+          "UNIQUE"
+        ],
+        "comment": null
+      },
+      {
+        "field_name": "work_phone",
+        "sql_type": "VARCHAR(20)",
+        "nullable": true,
+        "constraints": [],
+        "comment": null
+      },
+      {
+        "field_name": "office_loc_id",
+        "sql_type": "INT",
+        "nullable": true,
+        "constraints": [
+          "FK -> locations.loc_id"
+        ],
+        "comment": null
+      },
+      {
+        "field_name": "is_remote",
+        "sql_type": "TINYINT(1)",
+        "nullable": true,
+        "constraints": [],
+        "comment": "0 or 1"
+      },
+      {
+        "field_name": "rec_stat",
+        "sql_type": "CHAR(1)",
+        "nullable": true,
+        "constraints": [],
+        "comment": "A=Active, I=Inactive, T=Terminated"
+      },
+      {
+        "field_name": "created_ts",
+        "sql_type": "DATETIME",
+        "nullable": true,
+        "constraints": [],
+        "comment": "record creation timestamp"
+      },
+      {
+        "field_name": "updated_ts",
+        "sql_type": "DATETIME",
+        "nullable": true,
+        "constraints": [],
+        "comment": "last update timestamp"
+      }
+    ],
+    "dept_info": [
+      {
+        "field_name": "dept_id",
+        "sql_type": "INT",
+        "nullable": false,
+        "constraints": [
+          "PRIMARY KEY"
+        ],
+        "comment": null
+      },
+      {
+        "field_name": "dept_cd",
+        "sql_type": "VARCHAR(20)",
+        "nullable": true,
+        "constraints": [
+          "UNIQUE"
+        ],
+        "comment": null
+      },
+      {
+        "field_name": "dept_nm",
+        "sql_type": "VARCHAR(100)",
+        "nullable": true,
+        "constraints": [],
+        "comment": null
+      },
+      {
+        "field_name": "parent_dept_id",
+        "sql_type": "INT",
+        "nullable": true,
+        "constraints": [
+          "FK -> dept_info.dept_id"
+        ],
+        "comment": "self-referencing"
+      },
+      {
+        "field_name": "dept_head_id",
+        "sql_type": "INT",
+        "nullable": true,
+        "constraints": [
+          "FK -> emp_master.emp_id"
+        ],
+        "comment": null
+      },
+      {
+        "field_name": "cost_ctr_cd",
+        "sql_type": "VARCHAR(20)",
+        "nullable": true,
+        "constraints": [],
+        "comment": "finance cost center code"
+      },
+      {
+        "field_name": "dept_stat",
+        "sql_type": "CHAR(1)",
+        "nullable": true,
+        "constraints": [],
+        "comment": "A=Active, I=Inactive"
+      }
+    ],
+    "locations": [
+      {
+        "field_name": "loc_id",
+        "sql_type": "INT",
+        "nullable": false,
+        "constraints": [
+          "PRIMARY KEY"
+        ],
+        "comment": null
+      },
+      {
+        "field_name": "loc_cd",
+        "sql_type": "VARCHAR(20)",
+        "nullable": true,
+        "constraints": [
+          "UNIQUE"
+        ],
+        "comment": null
+      },
+      {
+        "field_name": "loc_nm",
+        "sql_type": "VARCHAR(100)",
+        "nullable": true,
+        "constraints": [],
+        "comment": null
+      },
+      {
+        "field_name": "city",
+        "sql_type": "VARCHAR(80)",
+        "nullable": true,
+        "constraints": [],
+        "comment": null
+      },
+      {
+        "field_name": "state_prov",
+        "sql_type": "VARCHAR(80)",
+        "nullable": true,
+        "constraints": [],
+        "comment": null
+      },
+      {
+        "field_name": "country_cd",
+        "sql_type": "CHAR(2)",
+        "nullable": true,
+        "constraints": [],
+        "comment": "ISO 3166-1 alpha-2"
+      },
+      {
+        "field_name": "postal_cd",
+        "sql_type": "VARCHAR(20)",
+        "nullable": true,
+        "constraints": [],
+        "comment": null
+      },
+      {
+        "field_name": "tz_cd",
+        "sql_type": "VARCHAR(50)",
+        "nullable": true,
+        "constraints": [],
+        "comment": "IANA timezone"
+      }
+    ]
+  }
+}

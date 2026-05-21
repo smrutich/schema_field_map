@@ -1,0 +1,185 @@
+"""
+Step 13 — Node: assemble_output
+
+LLM calls: None
+
+Responsibilities:
+    1. Merge TransformationRule outputs back into FieldMapping.notes
+    2. Group FieldMapping objects by source table
+    3. Compute TableMapping.confidence as mean of child confidences
+    4. Identify unmapped_source_fields and unmapped_destination_fields
+    5. Build FinalOutput with ISO 8601 generated_at timestamp
+    6. Run FinalOutput.model_validate() as final structural gate
+    7. Write final_output to state and serialize to schema_mapping_output.json
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from src.models import FieldMapping, FinalOutput, TableMapping
+from src.state import PipelineState
+
+logger = logging.getLogger(__name__)
+
+
+def assemble_output(state: PipelineState) -> PipelineState:
+    """LangGraph node: Assemble final output from all pipeline results.
+
+    LLM calls: None
+
+    Reads from state:
+        - field_mappings: list[FieldMapping]
+        - transformation_rules: list[TransformationRule]
+        - table_routing: list[TableRoutingDecision]
+        - source_fields: list[SourceField]
+        - destination_fields: list[DestinationField]
+
+    Writes to state:
+        - table_mappings: list[TableMapping]
+        - final_output: FinalOutput
+    """
+    field_mappings = state["field_mappings"]
+    transformation_rules = state.get("transformation_rules", [])
+    table_routing = state.get("table_routing", [])
+    source_fields = state["source_fields"]
+    destination_fields = state["destination_fields"]
+    errors = state.get("errors", [])
+
+    # --- 1. Merge transformation rules into FieldMapping.notes ---
+    transform_lookup: dict[str, str] = {}
+    for tr in transformation_rules:
+        if tr.transform_logic:
+            key = f"{tr.source_field}|{tr.destination_field}"
+            logic = f"[{tr.transform_type}] {tr.transform_logic}"
+            if tr.example:
+                logic += f" (e.g., {tr.example})"
+            transform_lookup[key] = logic
+
+    merged_mappings: list[FieldMapping] = []
+    for fm in field_mappings:
+        key = f"{fm.source_field}|{fm.destination_field or ''}"
+        transform_note = transform_lookup.get(key)
+
+        if transform_note and not fm.notes:
+            # Create new FieldMapping with merged notes
+            fm = FieldMapping(
+                source_field=fm.source_field,
+                destination_field=fm.destination_field,
+                type_transform=fm.type_transform,
+                confidence=fm.confidence,
+                reasoning=fm.reasoning,
+                notes=transform_note,
+                relationship_validated=fm.relationship_validated,
+            )
+        elif transform_note and fm.notes:
+            # Append to existing notes
+            fm = FieldMapping(
+                source_field=fm.source_field,
+                destination_field=fm.destination_field,
+                type_transform=fm.type_transform,
+                confidence=fm.confidence,
+                reasoning=fm.reasoning,
+                notes=f"{fm.notes} | {transform_note}",
+                relationship_validated=fm.relationship_validated,
+            )
+
+        merged_mappings.append(fm)
+
+    # --- 2. Group by source table using routing ---
+    routing_map: dict[str, str] = {}
+    routing_reasoning: dict[str, str] = {}
+    for rd in table_routing:
+        routing_map[rd.source_table] = rd.destination_collection
+        routing_reasoning[rd.source_table] = rd.reasoning
+
+    # Build source field -> table lookup
+    field_to_table: dict[str, str] = {}
+    for sf in source_fields:
+        field_to_table[sf.field_name] = sf.table_name
+
+    # Group mappings by source table
+    table_groups: dict[str, list[FieldMapping]] = {}
+    for fm in merged_mappings:
+        table = field_to_table.get(fm.source_field, "unknown")
+        table_groups.setdefault(table, []).append(fm)
+
+    # --- 3-5. Build TableMapping for each table ---
+    # Collect all source field names per table
+    source_fields_by_table: dict[str, set[str]] = {}
+    for sf in source_fields:
+        source_fields_by_table.setdefault(sf.table_name, set()).add(sf.field_name)
+
+    # Collect all destination paths per collection
+    dest_fields_by_collection: dict[str, set[str]] = {}
+    for df in destination_fields:
+        dest_fields_by_collection.setdefault(df.collection_name, set()).add(df.path)
+
+    table_mappings: list[TableMapping] = []
+
+    for source_table, dest_collection in routing_map.items():
+        mappings = table_groups.get(source_table, [])
+
+        # Compute mean confidence
+        confidences = [fm.confidence for fm in mappings]
+        mean_confidence = sum(confidences) / len(confidences) if confidences else 0.0
+
+        # Identify unmapped source fields
+        mapped_source = {fm.source_field for fm in mappings if fm.destination_field}
+        all_source = source_fields_by_table.get(source_table, set())
+        unmapped_source = sorted(all_source - mapped_source)
+
+        # Identify unmapped destination fields
+        mapped_dest = {fm.destination_field for fm in mappings if fm.destination_field}
+        all_dest = dest_fields_by_collection.get(dest_collection, set())
+        unmapped_dest = sorted(all_dest - mapped_dest)
+
+        reasoning = routing_reasoning.get(source_table, "")
+
+        tm = TableMapping(
+            source_table=source_table,
+            destination_collection=dest_collection,
+            confidence=round(mean_confidence, 4),
+            reasoning=reasoning,
+            field_mappings=mappings,
+            unmapped_source_fields=unmapped_source,
+            unmapped_destination_fields=unmapped_dest,
+        )
+        table_mappings.append(tm)
+
+    # --- 6. Build FinalOutput ---
+    final_output = FinalOutput(
+        generated_at=datetime.now(timezone.utc),
+        tables=table_mappings,
+    )
+
+    # Validate the full output structure
+    FinalOutput.model_validate(final_output.model_dump())
+
+    # --- 7. Serialize to JSON ---
+    project_root = Path(__file__).resolve().parent.parent.parent
+    output_dir = project_root / "mappings" / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "schema_mapping_output.json"
+
+    output_json = final_output.model_dump(mode="json")
+    output_path.write_text(json.dumps(output_json, indent=2) + "\n")
+
+    logger.info(f"Final output written to {output_path}")
+
+    # --- Write to state ---
+    state["table_mappings"] = table_mappings
+    state["final_output"] = final_output
+    state["errors"] = errors
+
+    logger.info(
+        f"assemble_output complete: "
+        f"{len(table_mappings)} table mappings, "
+        f"{sum(len(tm.field_mappings) for tm in table_mappings)} total field mappings"
+    )
+
+    return state

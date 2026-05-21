@@ -1,0 +1,50 @@
+{
+  "mapping_version": "1.0",
+  "source": "legacy_hrm (MySQL)",
+  "destination": "people_platform (MongoDB)",
+  "generated_at": "<ISO 8601 timestamp>",
+  "tables": [
+    {
+      "source_table": "emp_master",
+      "destination_collection": "employees",
+      "confidence": 0.97,
+      "reasoning": "Both represent the core employee entity ...",
+      "field_mappings": [
+        {
+          "source_field":       "emp_id",
+          "destination_field":  "_id",
+          "type_transform":     "INT -> ObjectId",
+          "confidence":         0.91,
+          "reasoning":          "Primary key maps to MongoDB _id; ID generation strategy required.",
+          "notes":              "Store original emp_id as a legacy field for traceability."
+        },
+        {
+          "source_field":       "f_name",
+          "destination_field":  "fullName.firstName",
+          "type_transform":     "VARCHAR -> String (nested path)",
+          "confidence":         0.98,
+          "reasoning":          "Flat field promoted into the fullName sub-document.",
+          "notes":              null
+        },
+        {
+          "source_field":       "rec_stat",
+          "destination_field":  "employment.status",
+          "type_transform":     "CHAR(1) code -> String enum",
+          "confidence":         0.95,
+          "reasoning":          "Single-char codes require a lookup transform to readable strings.",
+          "notes":              "Transform: A -> active, I -> inactive, T -> terminated"
+        },
+        {
+          "source_field":       "is_remote",
+          "destination_field":  "employment.isRemote",
+          "type_transform":     "TINYINT(1) -> Boolean",
+          "confidence":         0.99,
+          "reasoning":          "MySQL boolean integer pattern maps to MongoDB native Boolean.",
+          "notes":              null
+        }
+      ],
+      "unmapped_source_fields": [],
+      "unmapped_destination_fields": []
+    }
+  ]
+}
