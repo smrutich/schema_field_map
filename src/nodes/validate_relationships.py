@@ -88,6 +88,13 @@ def validate_relationships(state: PipelineState) -> PipelineState:
     # Process each field mapping
     updated_mappings: list[FieldMapping] = []
     for fm in field_mappings:
+        # Defense-in-depth: always reset relationship_validated to False at the
+        # start of the loop. The flag is then set True ONLY when this node
+        # confirms an FK alignment below. This protects against any upstream
+        # path (e.g., a stale state, or an LLM that ignored the schema split)
+        # that might have left True on a non-FK mapping.
+        fm = fm.model_copy(update={"relationship_validated": False})
+
         # Find the source field(s) matching this mapping
         matching_sources = source_by_name.get(fm.source_field, [])
 
@@ -144,14 +151,8 @@ def validate_relationships(state: PipelineState) -> PipelineState:
         if aligned:
             # Boost confidence, capped at MAX_CONFIDENCE
             new_confidence = min(fm.confidence + FK_CONFIDENCE_BOOST, MAX_CONFIDENCE)
-            updated_fm = FieldMapping(
-                source_field=fm.source_field,
-                destination_field=fm.destination_field,
-                type_transform=fm.type_transform,
-                confidence=new_confidence,
-                reasoning=fm.reasoning,
-                notes=fm.notes,
-                relationship_validated=True,
+            updated_fm = fm.model_copy(
+                update={"confidence": new_confidence, "relationship_validated": True}
             )
             updated_mappings.append(updated_fm)
             validated_count += 1

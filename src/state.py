@@ -23,7 +23,6 @@ from src.models import (
     SourceField,
     TableMapping,
     TableRoutingDecision,
-    TransformationRule,
 )
 
 
@@ -57,9 +56,6 @@ class PipelineState(TypedDict, total=False):
 
     # --- Field mapping (grows across map_fields execution) ---
     field_mappings: list[FieldMapping]
-
-    # --- Transformation extraction ---
-    transformation_rules: list[TransformationRule]
 
     # --- Assembly ---
     table_mappings: list[TableMapping]

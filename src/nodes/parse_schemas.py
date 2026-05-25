@@ -17,7 +17,7 @@ import logging
 import re
 from pathlib import Path
 
-from src.models import DestinationField, SourceField
+from src.models import DestinationField, SourceField, build_source_text_repr
 from src.state import PipelineState
 
 logger = logging.getLogger(__name__)
@@ -237,16 +237,17 @@ def _enrich_source_fields(fields: list[SourceField]) -> list[SourceField]:
 
         joined = " | ".join(notes)
         new_comment = f"{sf.comment} | {joined}" if sf.comment else joined
-        # Reconstruct so the text_repr model_validator regenerates from the new comment
+        # model_copy doesn't re-fire the model_validator, so rebuild text_repr explicitly
+        new_text_repr = build_source_text_repr(
+            table_name=sf.table_name,
+            field_name=sf.field_name,
+            sql_type=sf.sql_type,
+            nullable=sf.nullable,
+            constraints=sf.constraints,
+            comment=new_comment,
+        )
         enriched.append(
-            SourceField(
-                table_name=sf.table_name,
-                field_name=sf.field_name,
-                sql_type=sf.sql_type,
-                nullable=sf.nullable,
-                constraints=sf.constraints,
-                comment=new_comment,
-            )
+            sf.model_copy(update={"comment": new_comment, "text_repr": new_text_repr})
         )
     return enriched
 

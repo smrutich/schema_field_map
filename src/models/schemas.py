@@ -14,6 +14,65 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ---------------------------------------------------------------------------
+# text_repr builders — single source of truth for embedding-ready strings.
+# Used by model_validators on construction AND by callers who need to rebuild
+# after a model_copy() update (which does NOT re-fire model_validators).
+# ---------------------------------------------------------------------------
+
+
+def build_source_text_repr(
+    *,
+    table_name: str,
+    field_name: str,
+    sql_type: str,
+    nullable: bool,
+    constraints: list[str],
+    comment: str | None,
+    profile: "SemanticProfile | None" = None,
+) -> str:
+    """Build the embedding-ready string for a source field.
+
+    Pass `profile` to enrich with LLM-derived business meaning + keywords.
+    """
+    parts = [
+        f"table:{table_name}",
+        f"field:{field_name}",
+        f"type:{sql_type}",
+        f"nullable:{nullable}",
+    ]
+    if constraints:
+        parts.append(f"constraints:{', '.join(constraints)}")
+    if comment:
+        parts.append(f"comment:{comment}")
+    if profile is not None:
+        parts.append(f"meaning:{profile.business_meaning}")
+        if profile.keywords:
+            parts.append(f"keywords:{', '.join(profile.keywords)}")
+    return " | ".join(parts)
+
+
+def build_destination_text_repr(
+    *,
+    collection_name: str,
+    path: str,
+    bson_type: str,
+    ref_target: str | None,
+    comment: str | None,
+) -> str:
+    """Build the embedding-ready string for a destination field."""
+    parts = [
+        f"collection:{collection_name}",
+        f"path:{path}",
+        f"type:{bson_type}",
+    ]
+    if ref_target:
+        parts.append(f"ref:{ref_target}")
+    if comment:
+        parts.append(f"comment:{comment}")
+    return " | ".join(parts)
+
+
+# ---------------------------------------------------------------------------
 # 1.1 SourceField
 # ---------------------------------------------------------------------------
 
@@ -30,20 +89,16 @@ class SourceField(BaseModel):
     text_repr: str = ""
 
     @model_validator(mode="after")
-    def compute_text_repr(self) -> "SourceField":
-        """Build text_repr from all fields for embedding."""
+    def _default_text_repr(self) -> "SourceField":
         if not self.text_repr:
-            parts = [
-                f"table:{self.table_name}",
-                f"field:{self.field_name}",
-                f"type:{self.sql_type}",
-                f"nullable:{self.nullable}",
-            ]
-            if self.constraints:
-                parts.append(f"constraints:{', '.join(self.constraints)}")
-            if self.comment:
-                parts.append(f"comment:{self.comment}")
-            self.text_repr = " | ".join(parts)
+            self.text_repr = build_source_text_repr(
+                table_name=self.table_name,
+                field_name=self.field_name,
+                sql_type=self.sql_type,
+                nullable=self.nullable,
+                constraints=self.constraints,
+                comment=self.comment,
+            )
         return self
 
 
@@ -63,34 +118,36 @@ class DestinationField(BaseModel):
     text_repr: str = ""
 
     @model_validator(mode="after")
-    def compute_text_repr(self) -> "DestinationField":
-        """Build text_repr from all fields for embedding."""
+    def _default_text_repr(self) -> "DestinationField":
         if not self.text_repr:
-            parts = [
-                f"collection:{self.collection_name}",
-                f"path:{self.path}",
-                f"type:{self.bson_type}",
-            ]
-            if self.ref_target:
-                parts.append(f"ref:{self.ref_target}")
-            if self.comment:
-                parts.append(f"comment:{self.comment}")
-            self.text_repr = " | ".join(parts)
+            self.text_repr = build_destination_text_repr(
+                collection_name=self.collection_name,
+                path=self.path,
+                bson_type=self.bson_type,
+                ref_target=self.ref_target,
+                comment=self.comment,
+            )
         return self
 
 
 # ---------------------------------------------------------------------------
 # 1.3 SemanticProfile
+# (Used as both the in-memory enrichment model AND the LLM response model;
+# Instructor returns list[SemanticProfile] directly — no separate wrapper.)
 # ---------------------------------------------------------------------------
 
 
 class SemanticProfile(BaseModel):
     """LLM-generated semantic enrichment for a single field."""
 
-    entity: str  # Top-level business entity, e.g. "employee"
-    concept: str  # What the field represents, e.g. "identifier", "status"
-    business_meaning: str  # One plain English sentence
-    keywords: list[str] = Field(default_factory=list)
+    field_name: str = Field(description="The exact field name being profiled")
+    entity: str = Field(description="Top-level business entity, e.g. employee, department")
+    concept: str = Field(description="What this field represents, e.g. identifier, status, timestamp")
+    business_meaning: str = Field(description="One plain English sentence explaining the field's purpose")
+    keywords: list[str] = Field(
+        default_factory=list,
+        description="Synonyms and related terms useful for semantic matching",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -115,26 +172,27 @@ class CandidateMatch(BaseModel):
             raise ValueError(f"retrieval_confidence_prior must be one of {allowed}")
         return v
 
-    @model_validator(mode="after")
-    def validate_hybrid_score(self) -> "CandidateMatch":
-        """Enforce hybrid_score ≈ 0.8 * embedding + 0.2 * lexical (within rounding tolerance)."""
-        expected = 0.8 * self.embedding_similarity + 0.2 * self.lexical_similarity
-        if abs(self.hybrid_score - expected) > 1e-3:
-            raise ValueError(
-                f"hybrid_score ({self.hybrid_score}) must equal "
-                f"0.8 * embedding_similarity ({self.embedding_similarity}) + "
-                f"0.2 * lexical_similarity ({self.lexical_similarity}) = {expected:.6f}"
-            )
-        return self
-
 
 # ---------------------------------------------------------------------------
 # 1.5 FieldMapping
+#
+# Split into two layers:
+#   - FieldMappingProposal: what the LLM produces (no relationship_validated)
+#   - FieldMapping: what the pipeline state stores (adds relationship_validated,
+#     which is set ONLY by the rule-based validate_relationships node)
+#
+# Excluding `relationship_validated` from the LLM-facing schema prevents the
+# model from hallucinating True on non-FK fields.
 # ---------------------------------------------------------------------------
 
 
-class FieldMapping(BaseModel):
-    """Core output unit — one per source field. Instructor enforces this."""
+class FieldMappingProposal(BaseModel):
+    """LLM response for one source field — does NOT include relationship_validated.
+
+    Instructor uses this as the response_model in `map_fields`. The LLM can
+    decide source→destination, type transform, confidence, reasoning, and notes
+    — but it cannot influence FK validation status.
+    """
 
     source_field: str
     destination_field: Optional[str] = None
@@ -142,7 +200,6 @@ class FieldMapping(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     reasoning: str = Field(min_length=5, max_length=500)
     notes: Optional[str] = None
-    relationship_validated: bool = False
 
     @field_validator("destination_field")
     @classmethod
@@ -169,6 +226,17 @@ class FieldMapping(BaseModel):
         return v
 
 
+class FieldMapping(FieldMappingProposal):
+    """Finalized mapping — adds the rule-based relationship_validated flag.
+
+    `relationship_validated` is set to True ONLY by validate_relationships
+    when the FK metadata + table routing align with the destination schema.
+    The LLM never sees this field.
+    """
+
+    relationship_validated: bool = False
+
+
 # ---------------------------------------------------------------------------
 # 1.6 TableRoutingDecision
 # ---------------------------------------------------------------------------
@@ -184,30 +252,7 @@ class TableRoutingDecision(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# 1.7 TransformationRule
-# ---------------------------------------------------------------------------
-
-
-class TransformationRule(BaseModel):
-    """Output of the transformation extraction node."""
-
-    source_field: str
-    destination_field: str
-    transform_type: str  # VALUE_MAP, TYPE_CAST, ID_STRATEGY, FORMAT_CHANGE, NONE
-    transform_logic: Optional[str] = None
-    example: Optional[str] = None  # Before/after value pair
-
-    @field_validator("transform_type")
-    @classmethod
-    def validate_transform_type(cls, v: str) -> str:
-        allowed = {"VALUE_MAP", "TYPE_CAST", "ID_STRATEGY", "FORMAT_CHANGE", "NONE"}
-        if v not in allowed:
-            raise ValueError(f"transform_type must be one of {allowed}")
-        return v
-
-
-# ---------------------------------------------------------------------------
-# 1.8 TableMapping
+# 1.7 TableMapping
 # ---------------------------------------------------------------------------
 
 
@@ -224,7 +269,7 @@ class TableMapping(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# 1.9 FinalOutput
+# 1.8 FinalOutput
 # ---------------------------------------------------------------------------
 
 
@@ -236,26 +281,3 @@ class FinalOutput(BaseModel):
     destination: str = "people_platform (MongoDB)"
     generated_at: datetime
     tables: list[TableMapping] = Field(default_factory=list)
-
-
-# ---------------------------------------------------------------------------
-# LLM Response Models (used by Instructor as response_model)
-# ---------------------------------------------------------------------------
-
-
-class FieldProfile(BaseModel):
-    """A single field's semantic profile — used in batched LLM response."""
-
-    field_name: str = Field(description="The exact field name being profiled")
-    entity: str = Field(description="Top-level business entity, e.g. employee, department")
-    concept: str = Field(description="What this field represents, e.g. identifier, status, timestamp")
-    business_meaning: str = Field(description="One plain English sentence explaining the field's purpose")
-    keywords: list[str] = Field(
-        description="List of synonyms and related terms useful for semantic matching"
-    )
-
-
-class TableProfileResponse(BaseModel):
-    """Batched LLM response: semantic profiles for all fields in a table."""
-
-    profiles: list[FieldProfile]

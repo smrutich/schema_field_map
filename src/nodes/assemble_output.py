@@ -4,13 +4,11 @@ Step 13 — Node: assemble_output
 LLM calls: None
 
 Responsibilities:
-    1. Merge TransformationRule outputs back into FieldMapping.notes
-    2. Group FieldMapping objects by source table
-    3. Compute TableMapping.confidence as mean of child confidences
-    4. Identify unmapped_source_fields and unmapped_destination_fields
-    5. Build FinalOutput with ISO 8601 generated_at timestamp
-    6. Run FinalOutput.model_validate() as final structural gate
-    7. Write final_output to state and serialize to schema_mapping_output.json
+    1. Group FieldMapping objects by source table (using routing decisions)
+    2. Compute TableMapping.confidence as mean of child confidences
+    3. Identify unmapped_source_fields and unmapped_destination_fields
+    4. Build FinalOutput with ISO 8601 generated_at timestamp
+    5. Serialize to schema_mapping_output.json
 """
 
 from __future__ import annotations
@@ -34,7 +32,6 @@ def assemble_output(state: PipelineState) -> PipelineState:
 
     Reads from state:
         - field_mappings: list[FieldMapping]
-        - transformation_rules: list[TransformationRule]
         - table_routing: list[TableRoutingDecision]
         - source_fields: list[SourceField]
         - destination_fields: list[DestinationField]
@@ -44,53 +41,12 @@ def assemble_output(state: PipelineState) -> PipelineState:
         - final_output: FinalOutput
     """
     field_mappings = state["field_mappings"]
-    transformation_rules = state.get("transformation_rules", [])
     table_routing = state.get("table_routing", [])
     source_fields = state["source_fields"]
     destination_fields = state["destination_fields"]
     errors = state.get("errors", [])
 
-    # --- 1. Merge transformation rules into FieldMapping.notes ---
-    transform_lookup: dict[str, str] = {}
-    for tr in transformation_rules:
-        if tr.transform_logic:
-            key = f"{tr.source_field}|{tr.destination_field}"
-            logic = f"[{tr.transform_type}] {tr.transform_logic}"
-            if tr.example:
-                logic += f" (e.g., {tr.example})"
-            transform_lookup[key] = logic
-
-    merged_mappings: list[FieldMapping] = []
-    for fm in field_mappings:
-        key = f"{fm.source_field}|{fm.destination_field or ''}"
-        transform_note = transform_lookup.get(key)
-
-        if transform_note and not fm.notes:
-            # Create new FieldMapping with merged notes
-            fm = FieldMapping(
-                source_field=fm.source_field,
-                destination_field=fm.destination_field,
-                type_transform=fm.type_transform,
-                confidence=fm.confidence,
-                reasoning=fm.reasoning,
-                notes=transform_note,
-                relationship_validated=fm.relationship_validated,
-            )
-        elif transform_note and fm.notes:
-            # Append to existing notes
-            fm = FieldMapping(
-                source_field=fm.source_field,
-                destination_field=fm.destination_field,
-                type_transform=fm.type_transform,
-                confidence=fm.confidence,
-                reasoning=fm.reasoning,
-                notes=f"{fm.notes} | {transform_note}",
-                relationship_validated=fm.relationship_validated,
-            )
-
-        merged_mappings.append(fm)
-
-    # --- 2. Group by source table using routing ---
+    # --- 1. Group by source table using routing ---
     routing_map: dict[str, str] = {}
     routing_reasoning: dict[str, str] = {}
     for rd in table_routing:
@@ -106,7 +62,7 @@ def assemble_output(state: PipelineState) -> PipelineState:
 
     # Group mappings by source table
     table_groups: dict[str, list[FieldMapping]] = {}
-    for fm in merged_mappings:
+    for fm in field_mappings:
         table = field_to_table.get(fm.source_field, "unknown")
         table_groups.setdefault(table, []).append(fm)
 

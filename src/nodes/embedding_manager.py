@@ -26,6 +26,7 @@ from src.constants import (
     RETRIEVAL_THRESHOLD,
     RETRIEVAL_TOP_K,
 )
+from src.models import CandidateMatch
 
 logger = logging.getLogger(__name__)
 
@@ -43,12 +44,7 @@ class EmbeddingManager:
         self.model = SentenceTransformer(model_name)
         self._destination_matrix: NDArray[np.float32] | None = None
         self._destination_paths: list[str] = []
-        logger.info(f"Embedding model loaded | dim={self.model.get_embedding_dimension()}")
-
-    @property
-    def embedding_dim(self) -> int:
-        """Return the dimensionality of the embedding vectors."""
-        return self.model.get_embedding_dimension()
+        logger.info("Embedding model loaded")
 
     # ------------------------------------------------------------------
     # Destination field embedding (once at startup)
@@ -104,19 +100,10 @@ class EmbeddingManager:
         """Embed a single text string (e.g., a source field text_repr).
 
         Returns:
-            Normalized embedding vector (1D array of embedding_dim)
+            Normalized embedding vector (1D)
         """
         embedding = self.model.encode([text], normalize_embeddings=True)
         return np.array(embedding[0], dtype=np.float32)
-
-    def embed_texts(self, texts: list[str]) -> NDArray[np.float32]:
-        """Embed multiple text strings in a batch.
-
-        Returns:
-            Normalized embedding matrix (n_texts x embedding_dim)
-        """
-        embeddings = self.model.encode(texts, normalize_embeddings=True)
-        return np.array(embeddings, dtype=np.float32)
 
     # ------------------------------------------------------------------
     # Similarity computation
@@ -190,12 +177,12 @@ class EmbeddingManager:
         collection_names: list[str] | None = None,
         top_k: int = RETRIEVAL_TOP_K,
         threshold: float = RETRIEVAL_THRESHOLD,
-    ) -> list[dict]:
-        """Retrieve top candidate matches for a source field.
+    ) -> list[CandidateMatch]:
+        """Retrieve top candidate matches for a source field as Pydantic models.
 
         Combines embedding similarity and lexical similarity into hybrid scores,
-        filters by collection if routing has been applied, and returns top-k
-        above threshold.
+        filters by collection if routing has been applied, and returns the top-k
+        candidates above threshold (sorted by hybrid_score descending).
 
         Args:
             source_text_repr: Enriched text_repr of the source field
@@ -205,21 +192,12 @@ class EmbeddingManager:
                               (required if collection_filter is set)
             top_k: Number of top candidates to return
             threshold: Minimum hybrid score to include
-
-        Returns:
-            List of candidate dicts sorted by hybrid_score descending:
-            [{"destination_field", "embedding_similarity", "lexical_similarity",
-              "hybrid_score", "retrieval_confidence_prior"}, ...]
         """
-        # Embed source field on-demand
         source_emb = self.embed_text(source_text_repr)
-
-        # Cosine similarity against all destinations
         cos_scores = self.cosine_similarity(source_emb)
 
-        candidates = []
+        candidates: list[CandidateMatch] = []
         for i, dest_path in enumerate(self._destination_paths):
-            # Apply collection filter if routing is active
             if collection_filter and collection_names:
                 if collection_names[i] != collection_filter:
                     continue
@@ -227,24 +205,25 @@ class EmbeddingManager:
             emb_sim = float(cos_scores[i])
             lex_sim = self.lexical_similarity(source_field_name, dest_path)
             h_score = self.hybrid_score(emb_sim, lex_sim)
+            if h_score < threshold:
+                continue
 
-            if h_score >= threshold:
-                # Assign confidence prior
-                if h_score > CONFIDENCE_HIGH_THRESHOLD:
-                    prior = "HIGH"
-                elif h_score >= CONFIDENCE_MEDIUM_THRESHOLD:
-                    prior = "MEDIUM"
-                else:
-                    prior = "LOW"
+            if h_score > CONFIDENCE_HIGH_THRESHOLD:
+                prior = "HIGH"
+            elif h_score >= CONFIDENCE_MEDIUM_THRESHOLD:
+                prior = "MEDIUM"
+            else:
+                prior = "LOW"
 
-                candidates.append({
-                    "destination_field": dest_path,
-                    "embedding_similarity": round(emb_sim, 4),
-                    "lexical_similarity": round(lex_sim, 4),
-                    "hybrid_score": round(h_score, 4),
-                    "retrieval_confidence_prior": prior,
-                })
+            candidates.append(
+                CandidateMatch(
+                    destination_field=dest_path,
+                    embedding_similarity=round(emb_sim, 4),
+                    lexical_similarity=round(lex_sim, 4),
+                    hybrid_score=round(h_score, 4),
+                    retrieval_confidence_prior=prior,
+                )
+            )
 
-        # Sort by hybrid score descending, take top-k
-        candidates.sort(key=lambda c: c["hybrid_score"], reverse=True)
+        candidates.sort(key=lambda c: c.hybrid_score, reverse=True)
         return candidates[:top_k]

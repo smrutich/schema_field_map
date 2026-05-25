@@ -78,12 +78,9 @@ def retrieve_candidates(
 
     for sf in source_fields:
         key = f"{sf.table_name}.{sf.field_name}"
-
-        # Determine collection filter from routing
         collection_filter = routing_map.get(sf.table_name)
 
-        # Retrieve candidates using EmbeddingManager
-        raw_candidates = embedding_manager.retrieve_candidates(
+        matches = embedding_manager.retrieve_candidates(
             source_text_repr=sf.text_repr,
             source_field_name=sf.field_name,
             collection_filter=collection_filter,
@@ -91,27 +88,8 @@ def retrieve_candidates(
             top_k=top_k,
             threshold=threshold,
         )
-
-        if raw_candidates:
-            # Convert to CandidateMatch Pydantic models
-            matches = []
-            for c in raw_candidates:
-                emb_sim = c["embedding_similarity"]
-                lex_sim = c["lexical_similarity"]
-                # Recompute hybrid_score from rounded components to satisfy validator
-                h_score = round(0.8 * emb_sim + 0.2 * lex_sim, 4)
-                match = CandidateMatch(
-                    destination_field=c["destination_field"],
-                    embedding_similarity=emb_sim,
-                    lexical_similarity=lex_sim,
-                    hybrid_score=h_score,
-                    retrieval_confidence_prior=c["retrieval_confidence_prior"],
-                )
-                matches.append(match)
-            candidate_matches[key] = matches
-        else:
-            # No candidates above threshold — flag as unmapped
-            candidate_matches[key] = []
+        candidate_matches[key] = matches
+        if not matches:
             unmapped_count += 1
             logger.debug(f"No candidates for {key} (below threshold {threshold})")
 
