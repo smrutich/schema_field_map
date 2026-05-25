@@ -1,0 +1,42 @@
+[
+  {
+    "source_field": "dept_info.dept_cd",
+    "source_table": "dept_info",
+    "destination_field": "code",
+    "confidence": 0.7,
+    "reasoning": "The source field 'dept_cd' represents a department code, which semantically aligns with the destination field 'code'. Both fields are of type String, and the source field's UNIQUE constraint suggests it is used as an identifier, similar to the 'code' field. Although the hybrid score is relatively low, it is higher than the alternative, making 'code' the best match available.",
+    "candidate_alternatives": []
+  },
+  {
+    "source_field": "dept_info.dept_nm",
+    "source_table": "dept_info",
+    "destination_field": "name",
+    "confidence": 0.7,
+    "reasoning": "The source field 'dept_nm' likely represents the department name, which semantically matches the destination field 'name'. The type transformation from VARCHAR(100) to String is straightforward and requires no additional transformation logic.",
+    "candidate_alternatives": []
+  },
+  {
+    "source_field": "locations.loc_cd",
+    "source_table": "locations",
+    "destination_field": "code",
+    "confidence": 0.7,
+    "reasoning": "The source field 'locations.loc_cd' is a location code, which semantically aligns with the destination field 'code'. Both fields are of a similar type (string-based) and the UNIQUE constraint on the source field suggests it is an identifier, which matches the purpose of a 'code' field. The other candidates, 'country' and 'postalCode', are more specific and do not fit the general purpose of a location code.",
+    "candidate_alternatives": []
+  },
+  {
+    "source_field": "locations.loc_nm",
+    "source_table": "locations",
+    "destination_field": "name",
+    "confidence": 0.7,
+    "reasoning": "The source field 'locations.loc_nm' likely represents the name of a location, which aligns with the candidate field 'name'. Although the confidence prior is low, the semantic meaning of 'loc_nm' as 'location name' makes 'name' the most appropriate match among the candidates.",
+    "candidate_alternatives": []
+  },
+  {
+    "source_field": "locations.tz_cd",
+    "source_table": "locations",
+    "destination_field": "timezone",
+    "confidence": 0.7,
+    "reasoning": "The source field 'locations.tz_cd' and the destination field 'timezone' both refer to timezones, with the source specifically mentioning IANA timezones. The types are compatible, and the semantic meaning is a match, though the hybrid score is relatively low.",
+    "candidate_alternatives": []
+  }
+]

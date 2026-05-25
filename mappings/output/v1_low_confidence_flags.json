@@ -1,0 +1,50 @@
+[
+  {
+    "source_field": "dept_info.dept_cd",
+    "source_table": "dept_info",
+    "destination_field": "code",
+    "confidence": 0.7,
+    "reasoning": "The source field 'dept_info.dept_cd' represents a department code, which semantically matches the destination field 'code'. Both fields are of type String, and the source field's uniqueness constraint aligns with the typical use of a code field. Although the hybrid score is moderate, the semantic alignment justifies the selection.",
+    "candidate_alternatives": []
+  },
+  {
+    "source_field": "dept_info.dept_nm",
+    "source_table": "dept_info",
+    "destination_field": "name",
+    "confidence": 0.7,
+    "reasoning": "The source field 'dept_nm' likely represents the department name, which semantically aligns with the candidate 'name'. Both fields are of string type, and the 'name' candidate has the highest hybrid score among the options, making it the most appropriate match.",
+    "candidate_alternatives": []
+  },
+  {
+    "source_field": "emp_master.dob",
+    "source_table": "emp_master",
+    "destination_field": null,
+    "confidence": 0.2,
+    "reasoning": "The source field 'emp_master.dob' represents a date of birth, which is a personal attribute of an employee. The candidate fields 'employment.endDate' and 'employment.startDate' both relate to employment periods, not personal attributes. Therefore, neither candidate is semantically appropriate for mapping the date of birth.",
+    "candidate_alternatives": []
+  },
+  {
+    "source_field": "locations.loc_cd",
+    "source_table": "locations",
+    "destination_field": null,
+    "confidence": 0.2,
+    "reasoning": "The source field 'locations.loc_cd' is a unique code that could potentially match any of the candidates, but none of the candidates have a strong semantic alignment with a location code. The candidate 'country' suggests ISO 3166-1 alpha-2 codes which are country codes, not necessarily location codes, and 'code' is too generic. 'postalCode' is not applicable as it refers to postal codes, not general location codes.",
+    "candidate_alternatives": []
+  },
+  {
+    "source_field": "locations.loc_nm",
+    "source_table": "locations",
+    "destination_field": "name",
+    "confidence": 0.7,
+    "reasoning": "The source field 'locations.loc_nm' likely represents a location name, which semantically aligns with the candidate field 'name'. Both fields are of type String, and 'name' is a generic field that can accommodate location names. The other candidates, 'country' and 'postalCode', do not match the semantic meaning of a location name.",
+    "candidate_alternatives": []
+  },
+  {
+    "source_field": "locations.tz_cd",
+    "source_table": "locations",
+    "destination_field": "timezone",
+    "confidence": 0.7,
+    "reasoning": "The source field 'locations.tz_cd' is described as an IANA timezone, which matches the candidate 'timezone'. The types are compatible, and the semantic meaning aligns well. The other candidate 'country' is not relevant as it refers to country codes.",
+    "candidate_alternatives": []
+  }
+]
