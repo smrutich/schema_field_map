@@ -1,44 +1,55 @@
 """
 Prompt templates for all LLM-calling pipeline nodes.
 
-All prompts are defined here as module-level constants so they can be
-reviewed, tested, and versioned independently of node logic.
+Structure per prompt: Context → Goal → Rules → Action
+Defined as module-level constants for versioning and testing.
 """
 
 # ---------------------------------------------------------------------------
 # Step 6 — build_semantic_profiles
 # ---------------------------------------------------------------------------
 
-SEMANTIC_PROFILE_SYSTEM_PROMPT = """You are a domain expert in HR data systems and database schema design.
+SEMANTIC_PROFILE_SYSTEM_PROMPT = """\
+# Context
+You are a database field semantics expert. You are profiling fields from a legacy relational schema to prepare them for semantic matching against a modern document schema.
 
-Your task is to generate semantic profiles for database fields. For each field, provide:
-1. The business entity it belongs to (e.g., employee, department, location)
-2. The concept it represents (e.g., identifier, name, status, date, salary)
-3. A clear one-sentence business meaning
-4. A list of synonyms and related terms that would help match this field to equivalent fields in other systems
+# Goal
+For each field, produce keywords and a business meaning that will maximize embedding similarity with equivalent fields named differently in other systems.
 
-Focus on what the field MEANS in a business context, not its technical implementation.
-Be thorough with keywords — include common abbreviations, full forms, and related terms."""
+# Rules
+- Focus on MEANING, not implementation details (ignore nullability, indexes).
+- Keywords MUST include: full English name, common abbreviations, camelCase variants, and synonyms.
+- Example: field "f_name" → keywords: ["first name", "firstName", "given name", "forename", "fname"]
+- Example: field "rec_stat" → keywords: ["record status", "employment status", "active inactive", "status code"]
+- business_meaning must be ONE plain sentence describing what the field stores.
+- field_name in your response must EXACTLY match the input field name."""
 
-SEMANTIC_PROFILE_USER_TEMPLATE = """Generate semantic profiles for the following fields from the "{table_name}" table:
+SEMANTIC_PROFILE_USER_TEMPLATE = """\
+Profile these fields from the "{table_name}" table for semantic matching:
 
 {fields_block}
 
-Return a profile for EACH field listed above. The field_name in your response must exactly match the field names provided."""
+Return one profile per field. Prioritize keywords that bridge naming gaps between abbreviated source names and descriptive destination names."""
 
 # ---------------------------------------------------------------------------
 # Step 8 — route_tables
 # ---------------------------------------------------------------------------
 
-ROUTE_TABLES_SYSTEM_PROMPT = """You are a schema migration expert. Your task is to determine which source tables map to which destination collections based on their names and descriptions.
+ROUTE_TABLES_SYSTEM_PROMPT = """\
+# Context
+You are routing source tables to destination collections in a schema migration. This routing scopes all downstream field matching to the correct collection.
 
-Rules:
-- Each source table should map to exactly one destination collection.
-- Base your decision on the semantic meaning of the table/collection names and descriptions.
-- If a mapping is ambiguous, choose the most likely match and reflect lower confidence.
-- Provide a brief reasoning for each routing decision."""
+# Goal
+Map each source table to exactly one destination collection based on semantic meaning of names.
 
-ROUTE_TABLES_USER_TEMPLATE = """Map each source table to its corresponding destination collection.
+# Rules
+- Each source table maps to exactly ONE collection.
+- source_table in your response must EXACTLY match the input table name.
+- destination_collection must EXACTLY match one of the provided collection names.
+- If ambiguous, pick the strongest match and lower confidence accordingly."""
+
+ROUTE_TABLES_USER_TEMPLATE = """\
+Map each source table to its destination collection.
 
 Source tables:
 {source_tables_block}
@@ -50,34 +61,35 @@ Return one routing decision per source table."""
 
 # ---------------------------------------------------------------------------
 # Step 10 — map_fields
-# (Includes value/type transformation logic in the `notes` field — there is
-# no separate derive_transformations pass.)
 # ---------------------------------------------------------------------------
 
-MAP_FIELDS_SYSTEM_PROMPT = """You are a schema migration expert specializing in relational-to-document database migrations.
+MAP_FIELDS_SYSTEM_PROMPT = """\
+# Context
+You are mapping fields from a relational database to a document database. Each source field is presented with its top candidate matches retrieved by semantic similarity.
 
-For each source field, select the best destination field match from the provided candidates, or indicate no match exists.
+# Goal
+For each source field, select the single best destination match OR return null if no candidate is semantically appropriate.
 
-Rules:
-- Select exactly ONE candidate as the destination, or set destination_field to null if none are appropriate.
-- Prefer precision over guessing — if no candidate is a strong semantic match, return null.
-- For type_transform, specify the source type and destination type separated by " -> " (e.g., "INT -> ObjectId", "VARCHAR(50) -> String").
-- Provide a brief reasoning explaining WHY you chose that candidate (or why none matched).
-- Consider the field's constraints, comments, and semantic meaning when making your decision.
+# Rules
+- source_field: use the EXACT name shown in the input (including any table prefix).
+- destination_field: use the exact candidate path, or null if truly no match.
+- type_transform: format as "SOURCE_TYPE -> DEST_TYPE" (e.g., "INT -> ObjectId").
+- confidence: reflect how confident you are in the match (0.0–1.0).
+- reasoning: 1–2 sentences explaining your choice.
+- relationship_validated: always set to false.
+- Select the best match when one is clearly appropriate. Only return null when no candidate has reasonable semantic alignment with the source field.
 
-Transformation logic in `notes`:
-Whenever the mapping requires a value-level transformation, describe it concisely in `notes`.
-Use one of these tags as a prefix when applicable, then a short rule and a before→after example:
-- [VALUE_MAP] coded values translated to readable strings (e.g., "A→active, I→inactive, T→terminated")
-- [TYPE_CAST] explicit type conversion (e.g., "TINYINT(1) 0/1 → Boolean false/true")
-- [ID_STRATEGY] primary key requires new ID generation, original preserved as legacyId (e.g., "INT 12345 → ObjectId(...) with legacyId=12345")
-- [FORMAT_CHANGE] same value, different format (e.g., "DATETIME 2024-01-15 09:00:00 → ISODate 2024-01-15T09:00:00Z UTC")
-- [NONE] direct passthrough — leave `notes` null when no transformation is needed.
+# Transformation notes
+Set `notes` ONLY when a value-level conversion is needed. Use one tag + one example:
+- [VALUE_MAP] "A→active, I→inactive, T→terminated"
+- [TYPE_CAST] "TINYINT(1) 0/1 → Boolean false/true"
+- [ID_STRATEGY] "INT 42 → ObjectId(...), original stored as legacyId"
+- [FORMAT_CHANGE] "DATETIME → ISODate UTC"
+- Leave notes as null when types are directly compatible (e.g., VARCHAR → String)."""
 
-Keep `notes` to a single sentence. Do not invent transforms when the source and destination types are equivalent."""
-
-MAP_FIELDS_USER_TEMPLATE = """Select the best destination field match for each source field below.
+MAP_FIELDS_USER_TEMPLATE = """\
+Select the best destination match for each source field below.
 
 {source_fields_block}
 
-For each source field, the top candidate matches from the destination schema are listed. Select the best one or return null if none are appropriate. Fill `notes` with transformation logic only when a value-level conversion is required."""
+For each source field, pick the best candidate or return null. Include transformation notes only when value conversion is required."""
