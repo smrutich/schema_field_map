@@ -22,6 +22,7 @@ import logging
 from src.models import CandidateMatch
 from src.nodes.embedding_manager import EmbeddingManager
 from src.state import PipelineState
+from src.constants import RETRIEVAL_TOP_K, RETRIEVAL_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +30,8 @@ logger = logging.getLogger(__name__)
 def retrieve_candidates(
     state: PipelineState,
     embedding_manager: EmbeddingManager | None = None,
-    top_k: int = 3,
-    threshold: float = 0.40,
+    top_k: int = RETRIEVAL_TOP_K,
+    threshold: float = RETRIEVAL_THRESHOLD,
 ) -> PipelineState:
     """LangGraph node: Retrieve top candidate matches for each source field.
 

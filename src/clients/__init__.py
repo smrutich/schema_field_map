@@ -1,300 +1,170 @@
 """
-Step 2 — LLM Client Configuration
+LLM Client — Multi-provider with auto-detection.
 
-Provides:
-- CortexSettings: pydantic-settings BaseSettings for credential management
-- LLMManager: Adaptive instructor-patched client that works with any
-  OpenAI-compatible endpoint (Snowflake Cortex, OpenAI, Azure OpenAI, Ollama, etc.)
+Supports OpenAI, Groq, Azure OpenAI, Snowflake Cortex, and Ollama via a single
+OpenAI-compatible client wrapped with Instructor for structured output.
 
-Default: Snowflake Cortex REST API with Personal Access Token.
-Override: Set LLM_PROVIDER + provider-specific env vars to use another backend.
+Provider is auto-detected from whichever credentials are present in the
+environment, with explicit override via LLM_PROVIDER.
+
+Detection priority (when LLM_PROVIDER is unset):
+    openai_api_key → openai
+    groq_api_key → groq
+    azure_openai_api_key + azure_openai_endpoint → azure
+    snowflake_account + (snowflake_pat | snowflake_password) → snowflake
+    fallback → ollama (localhost)
 """
 
 from __future__ import annotations
 
 import logging
-from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 import instructor
 from openai import AzureOpenAI, OpenAI
-from pydantic import Field
 from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# 2.1 Credential Management
-# ---------------------------------------------------------------------------
+Provider = Literal["openai", "groq", "azure", "snowflake", "ollama"]
 
 
-class LLMProvider(str, Enum):
-    """Supported LLM providers."""
+class LLMSettings(BaseSettings):
+    """Credentials and model config loaded from .env / environment.
 
-    SNOWFLAKE_CORTEX = "snowflake_cortex"
-    OPENAI = "openai"
-    AZURE_OPENAI = "azure_openai"
-    OLLAMA = "ollama"
-
-
-class CortexSettings(BaseSettings):
-    """Configuration loaded from environment variables.
-
-    Missing required variables raise a clear startup error before pipeline execution.
+    Set whichever provider's credentials you have; the manager auto-detects.
+    Override detection by setting LLM_PROVIDER explicitly.
     """
 
-    # Provider selection
-    llm_provider: LLMProvider = Field(
-        default=LLMProvider.SNOWFLAKE_CORTEX,
-        description="LLM provider: snowflake_cortex, openai, azure_openai, ollama",
-    )
+    # Optional explicit override
+    llm_provider: Provider | None = None
 
-    # Snowflake credentials (required when provider=snowflake_cortex)
-    snowflake_account: str = Field(default="", description="Snowflake account identifier")
-    snowflake_user: str = Field(default="", description="Snowflake username")
-    snowflake_password: str = Field(default="", description="Snowflake password (optional if using PAT)")
-    snowflake_pat: str = Field(default="", description="Snowflake Personal Access Token")
-    snowflake_role: str = Field(default="", description="Snowflake role")
-    snowflake_warehouse: str = Field(default="", description="Snowflake warehouse")
-    snowflake_database: str = Field(default="", description="Snowflake database")
+    # Per-provider credentials — set whichever you use
+    openai_api_key: str = ""
+    # openai_base_url: str = ""  # Optional custom OpenAI-compatible endpoint
 
-    # OpenAI credentials (required when provider=openai)
-    openai_api_key: str = Field(default="", description="OpenAI API key")
-    openai_base_url: str = Field(default="", description="Custom OpenAI-compatible base URL (optional)")
+    groq_api_key: str = ""
 
-    # Azure OpenAI credentials (required when provider=azure_openai)
-    azure_openai_endpoint: str = Field(default="", description="Azure OpenAI endpoint URL")
-    azure_openai_api_key: str = Field(default="", description="Azure OpenAI API key")
-    azure_openai_api_version: str = Field(default="2024-12-01-preview", description="Azure OpenAI API version")
-    azure_openai_deployment_name: str = Field(default="", description="Azure OpenAI deployment name")
+    azure_openai_api_key: str = ""
+    azure_openai_endpoint: str = ""
+    azure_openai_api_version: str = "2024-12-01-preview"
 
-    # Ollama configuration (required when provider=ollama)
-    ollama_base_url: str = Field(default="http://localhost:11434/v1", description="Ollama API base URL")
+    snowflake_account: str = ""
+    snowflake_pat: str = ""
+    snowflake_password: str = ""
 
-    # Model configuration
-    routing_model: str = Field(
-        default="snowflake-arctic-instruct",
-        description="Model for routing and semantic profiling",
-    )
-    mapping_model: str = Field(
-        default="mistral-large2",
-        description="Model for field mapping and transformation extraction",
-    )
+    ollama_base_url: str = "http://localhost:11434/v1"
 
-    # Instructor retry configuration
-    max_retries: int = Field(
-        default=3,
-        description="Max retries on Pydantic validation failure",
-    )
+    # Models — used by call_routing / call_mapping
+    routing_model: str = "snowflake-arctic-instruct"
+    mapping_model: str = "mistral-large2"
 
-    model_config = {"env_prefix": "", "env_file": ".env", "extra": "ignore"}
+    # Instructor retry budget
+    max_retries: int = 3
 
-    @property
-    def cortex_api_key(self) -> str:
-        """Return PAT if available, otherwise password (for Snowflake Cortex)."""
-        return self.snowflake_pat or self.snowflake_password
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
-    @property
-    def cortex_base_url(self) -> str:
-        """Construct Snowflake Cortex OpenAI-compatible endpoint URL."""
-        return f"https://{self.snowflake_account}.snowflakecomputing.com/api/v2/cortex/v1"
+    def detect_provider(self) -> Provider:
+        """Return the active provider, auto-detecting from credentials if not set."""
+        if self.llm_provider:
+            return self.llm_provider
+        if self.openai_api_key:
+            return "openai"
+        if self.groq_api_key:
+            return "groq"
+        if self.azure_openai_api_key and self.azure_openai_endpoint:
+            return "azure"
+        if self.snowflake_account and (self.snowflake_pat or self.snowflake_password):
+            return "snowflake"
+        return "ollama"
 
 
-# ---------------------------------------------------------------------------
-# 2.2 Adaptive LLM Manager
-# ---------------------------------------------------------------------------
+def _make_base_client(s: LLMSettings, provider: Provider) -> OpenAI | AzureOpenAI:
+    """Build the raw OpenAI-compatible client for the given provider."""
+    if provider == "openai":
+        return OpenAI(
+            api_key=s.openai_api_key,
+            # base_url=s.openai_base_url or None,
+        )
+    if provider == "groq":
+        return OpenAI(
+            api_key=s.groq_api_key,
+            base_url="https://api.groq.com/openai/v1",
+        )
+    if provider == "azure":
+        return AzureOpenAI(
+            api_key=s.azure_openai_api_key,
+            azure_endpoint=s.azure_openai_endpoint,
+            api_version=s.azure_openai_api_version,
+        )
+    if provider == "snowflake":
+        return OpenAI(
+            api_key=s.snowflake_pat or s.snowflake_password,
+            base_url=f"https://{s.snowflake_account}.snowflakecomputing.com/api/v2/cortex/v1",
+        )
+    if provider == "ollama":
+        return OpenAI(api_key="ollama", base_url=s.ollama_base_url)
+    raise ValueError(f"Unsupported provider: {provider}")
 
 
 class LLMManager:
-    """Adaptive LLM client that works with any OpenAI-compatible provider.
+    """Instructor-wrapped multi-provider LLM client.
 
-    Wraps instructor for structured output enforcement with automatic retry.
-    Supports Snowflake Cortex, OpenAI, Azure OpenAI, Ollama, or any custom endpoint.
-
-    Two logical clients:
-    - routing: For semantic profiling and table routing (lighter model)
-    - mapping: For field mapping and transformation extraction (stronger model)
-
-    For Azure OpenAI: routing_model and mapping_model should be set to the
-    deployment name (AZURE_OPENAI_DEPLOYMENT_NAME) unless you have separate
-    deployments for each.
+    Auto-detects the provider from which credentials are present and exposes
+    a single `call()` method with structured-output enforcement via Instructor.
+    `call_routing` and `call_mapping` are convenience wrappers that pre-fill
+    the configured routing/mapping model and a sensible temperature.
     """
 
-    def __init__(self, settings: CortexSettings | None = None):
-        self.settings = settings or CortexSettings()
-        self._client: Any = None
+    def __init__(self, settings: LLMSettings | None = None):
+        self.settings = settings or LLMSettings()
+        self.provider: Provider = self.settings.detect_provider()
+
+        base = _make_base_client(self.settings, self.provider)
+        # Ollama needs JSON mode (no native function/tool calling)
+        if self.provider == "ollama":
+            self.client: Any = instructor.from_openai(base, mode=instructor.Mode.JSON)
+        else:
+            self.client = instructor.from_openai(base)
 
         logger.info(
-            f"LLMManager initialized | "
-            f"provider={self.settings.llm_provider.value} | "
-            f"routing_model={self.settings.routing_model} | "
-            f"mapping_model={self.settings.mapping_model}"
-        )
-
-    def _create_base_client(self) -> OpenAI | AzureOpenAI:
-        """Create a base client based on the configured provider."""
-        provider = self.settings.llm_provider
-
-        if provider == LLMProvider.SNOWFLAKE_CORTEX:
-            if not self.settings.snowflake_account:
-                raise ValueError("SNOWFLAKE_ACCOUNT is required for Snowflake Cortex provider")
-            return OpenAI(
-                api_key=self.settings.cortex_api_key,
-                base_url=self.settings.cortex_base_url,
-            )
-
-        elif provider == LLMProvider.OPENAI:
-            if not self.settings.openai_api_key:
-                raise ValueError("OPENAI_API_KEY is required for OpenAI provider")
-            kwargs: dict[str, Any] = {"api_key": self.settings.openai_api_key}
-            if self.settings.openai_base_url:
-                kwargs["base_url"] = self.settings.openai_base_url
-            return OpenAI(**kwargs)
-
-        elif provider == LLMProvider.AZURE_OPENAI:
-            if not self.settings.azure_openai_endpoint:
-                raise ValueError("AZURE_OPENAI_ENDPOINT is required for Azure OpenAI provider")
-            if not self.settings.azure_openai_api_key:
-                raise ValueError("AZURE_OPENAI_API_KEY is required for Azure OpenAI provider")
-            return AzureOpenAI(
-                azure_endpoint=self.settings.azure_openai_endpoint,
-                api_key=self.settings.azure_openai_api_key,
-                api_version=self.settings.azure_openai_api_version,
-            )
-
-        elif provider == LLMProvider.OLLAMA:
-            return OpenAI(
-                api_key="ollama",
-                base_url=self.settings.ollama_base_url,
-            )
-
-        else:
-            raise ValueError(f"Unsupported LLM provider: {provider}")
-
-    @property
-    def client(self) -> Any:
-        """Lazily initialize the instructor-patched client."""
-        if self._client is None:
-            base = self._create_base_client()
-            provider = self.settings.llm_provider
-
-            if provider == LLMProvider.OLLAMA:
-                self._client = instructor.from_openai(base, mode=instructor.Mode.JSON)
-            else:
-                self._client = instructor.from_openai(base)
-
-            logger.info(f"Instructor client created | provider={provider.value}")
-        return self._client
-
-    @property
-    def _effective_routing_model(self) -> str:
-        """Return the model name to use for routing calls.
-
-        For Azure OpenAI, falls back to deployment name if routing_model not set.
-        """
-        if self.settings.llm_provider == LLMProvider.AZURE_OPENAI:
-            return self.settings.routing_model or self.settings.azure_openai_deployment_name
-        return self.settings.routing_model
-
-    @property
-    def _effective_mapping_model(self) -> str:
-        """Return the model name to use for mapping calls.
-
-        For Azure OpenAI, falls back to deployment name if mapping_model not set.
-        """
-        if self.settings.llm_provider == LLMProvider.AZURE_OPENAI:
-            return self.settings.mapping_model or self.settings.azure_openai_deployment_name
-        return self.settings.mapping_model
-
-    def call_routing(
-        self,
-        *,
-        messages: list[dict[str, str]],
-        response_model: type,
-        temperature: float = 0.1,
-        **kwargs: Any,
-    ) -> Any:
-        """Make an instructor-enforced LLM call using the routing model.
-
-        Used by: build_semantic_profiles, route_tables
-
-        Args:
-            messages: Chat messages (system + user)
-            response_model: Pydantic model class for structured output
-            temperature: Sampling temperature (low for factual extraction)
-            **kwargs: Additional parameters passed to the API
-
-        Returns:
-            Validated Pydantic model instance
-        """
-        return self.client.chat.completions.create(
-            model=self._effective_routing_model,
-            messages=messages,
-            response_model=response_model,
-            temperature=temperature,
-            max_retries=self.settings.max_retries,
-            **kwargs,
-        )
-
-    def call_mapping(
-        self,
-        *,
-        messages: list[dict[str, str]],
-        response_model: type,
-        temperature: float = 0.3,
-        **kwargs: Any,
-    ) -> Any:
-        """Make an instructor-enforced LLM call using the mapping model.
-
-        Used by: map_fields, derive_transformations
-
-        Args:
-            messages: Chat messages (system + user)
-            response_model: Pydantic model class for structured output
-            temperature: Slightly higher for nuanced semantic reasoning
-            **kwargs: Additional parameters passed to the API
-
-        Returns:
-            Validated Pydantic model instance
-        """
-        return self.client.chat.completions.create(
-            model=self._effective_mapping_model,
-            messages=messages,
-            response_model=response_model,
-            temperature=temperature,
-            max_retries=self.settings.max_retries,
-            **kwargs,
+            f"LLMManager initialized | provider={self.provider} | "
+            f"routing={self.settings.routing_model} | mapping={self.settings.mapping_model}"
         )
 
     def call(
         self,
         *,
-        model: str,
         messages: list[dict[str, str]],
         response_model: type,
+        model: str | None = None,
         temperature: float = 0.2,
         **kwargs: Any,
     ) -> Any:
-        """Generic call with explicit model override.
-
-        Use when you need a model that isn't routing or mapping.
+        """Make an Instructor-enforced LLM call.
 
         Args:
-            model: Model name to use for this call
-            messages: Chat messages
-            response_model: Pydantic model class for structured output
-            temperature: Sampling temperature
-            **kwargs: Additional parameters
-
-        Returns:
-            Validated Pydantic model instance
+            messages: Chat messages (system + user).
+            response_model: Pydantic model class for structured output.
+            model: Override model name. Defaults to mapping_model.
+            temperature: Sampling temperature.
+            **kwargs: Passed through to the underlying API.
         """
         return self.client.chat.completions.create(
-            model=model,
+            model=model or self.settings.mapping_model,
             messages=messages,
             response_model=response_model,
             temperature=temperature,
             max_retries=self.settings.max_retries,
             **kwargs,
         )
+
+    def call_routing(self, **kwargs: Any) -> Any:
+        """Convenience wrapper using routing_model + low temperature (0.1)."""
+        kwargs.setdefault("temperature", 0.1)
+        return self.call(model=self.settings.routing_model, **kwargs)
+
+    def call_mapping(self, **kwargs: Any) -> Any:
+        """Convenience wrapper using mapping_model + medium temperature (0.3)."""
+        kwargs.setdefault("temperature", 0.3)
+        return self.call(model=self.settings.mapping_model, **kwargs)

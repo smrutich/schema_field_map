@@ -2,165 +2,356 @@
   "mapping_version": "1.0",
   "source": "legacy_hrm (MySQL)",
   "destination": "people_platform (MongoDB)",
-  "generated_at": "2026-05-21T07:03:52.011136Z",
+  "generated_at": "2026-05-22T22:44:24.038487Z",
   "tables": [
     {
       "source_table": "emp_master",
       "destination_collection": "employees",
-      "confidence": 0.9575,
-      "reasoning": "Employee master table maps to employees collection",
+      "confidence": 0.8237,
+      "reasoning": "The 'emp_master' table likely contains employee-related data, which corresponds to the 'employees' collection.",
       "field_mappings": [
         {
-          "source_field": "emp_id",
+          "source_field": "emp_master.emp_id",
           "destination_field": "_id",
           "type_transform": "INT -> ObjectId",
-          "confidence": 0.91,
-          "reasoning": "Simulated mapping for assembly test",
-          "notes": "[ID_STRATEGY] Generate new ObjectId, store original INT as legacyId field (e.g., 42 -> ObjectId(\"...\"))",
+          "confidence": 0.75,
+          "reasoning": "The source field 'emp_master.emp_id' is the primary key and uniquely identifies each employee. In a document database, the '_id' field typically serves as the unique identifier for documents. Although the hybrid score is low, '_id' is the most semantically appropriate match for a primary key field.",
+          "notes": "An ID generation strategy may be needed to convert INT to ObjectId.",
           "relationship_validated": false
         },
         {
-          "source_field": "f_name",
-          "destination_field": "fullName.firstName",
-          "type_transform": "VARCHAR(50) -> String",
-          "confidence": 0.98,
-          "reasoning": "Simulated mapping for assembly test",
+          "source_field": "emp_master.emp_cd",
+          "destination_field": "employeeCode",
+          "type_transform": "VARCHAR(20) -> String",
+          "confidence": 0.9,
+          "reasoning": "The source field 'emp_master.emp_cd' is a unique, human-readable employee code, which aligns well with the destination field 'employeeCode' that is also described as a unique human-readable ID. The type transformation from 'VARCHAR(20)' to 'String' is straightforward, and the semantic meaning matches closely.",
           "notes": null,
           "relationship_validated": false
         },
         {
-          "source_field": "rec_stat",
-          "destination_field": "employment.status",
-          "type_transform": "CHAR(1) -> String",
-          "confidence": 0.95,
-          "reasoning": "Simulated mapping for assembly test",
-          "notes": "[VALUE_MAP] A -> active, I -> inactive, T -> terminated (e.g., A -> active)",
+          "source_field": "emp_master.f_name",
+          "destination_field": "fullName.firstName",
+          "type_transform": "VARCHAR(50) -> String",
+          "confidence": 0.8,
+          "reasoning": "The source field 'f_name' likely stands for 'first name,' which semantically matches the destination field 'fullName.firstName.' Both fields are of type String, and 'firstName' is a common attribute for storing first names of individuals.",
+          "notes": "Ensure that the first name is correctly extracted if concatenated with other name parts in the source data.",
           "relationship_validated": false
         },
         {
-          "source_field": "is_remote",
+          "source_field": "emp_master.l_name",
+          "destination_field": "fullName.lastName",
+          "type_transform": "VARCHAR(50) -> String",
+          "confidence": 0.8,
+          "reasoning": "The source field 'emp_master.l_name' represents the last name of an employee, which semantically matches the destination field 'fullName.lastName'. Both fields are of type String, and the purpose of storing a last name aligns well with the candidate field.",
+          "notes": null,
+          "relationship_validated": false
+        },
+        {
+          "source_field": "emp_master.dob",
+          "destination_field": null,
+          "type_transform": "DATE -> ISODate",
+          "confidence": 0.2,
+          "reasoning": "The source field 'emp_master.dob' represents a date of birth, which is a personal attribute of an employee. The candidate fields 'employment.endDate' and 'employment.startDate' both relate to employment periods, not personal attributes. Therefore, neither candidate is semantically appropriate for mapping the date of birth.",
+          "notes": "No candidate fields relate to personal attributes like date of birth, which is why no match is selected.",
+          "relationship_validated": false
+        },
+        {
+          "source_field": "emp_master.hire_dt",
+          "destination_field": "employment.startDate",
+          "type_transform": "DATETIME -> ISODate",
+          "confidence": 0.8,
+          "reasoning": "The source field 'emp_master.hire_dt' represents the hire date of an employee, which semantically aligns with the destination field 'employment.startDate'. Both fields represent the start date of employment, making this the most appropriate match among the candidates.",
+          "notes": "Ensure the DATETIME format is correctly converted to ISODate format during migration.",
+          "relationship_validated": false
+        },
+        {
+          "source_field": "emp_master.term_dt",
+          "destination_field": "employment.endDate",
+          "type_transform": "DATETIME -> ISODate",
+          "confidence": 0.9,
+          "reasoning": "The source field 'emp_master.term_dt' represents the termination date of an employee, which aligns with the candidate 'employment.endDate' that also represents an end date and is null if the employee is currently employed. Both fields use a date type, and the semantic meaning matches well.",
+          "notes": "Ensure date format conversion from DATETIME to ISODate.",
+          "relationship_validated": true
+        },
+        {
+          "source_field": "emp_master.dept_id",
+          "destination_field": "department.departmentId",
+          "type_transform": "INT -> ObjectId",
+          "confidence": 0.95,
+          "reasoning": "The source field 'emp_master.dept_id' is a foreign key reference to a department, which matches the candidate 'department.departmentId' that is also a reference to a department ID. The semantic meaning aligns well, and the type transformation from INT to ObjectId is appropriate for a reference ID.",
+          "notes": "Requires transformation from INT to ObjectId for MongoDB compatibility.",
+          "relationship_validated": true
+        },
+        {
+          "source_field": "emp_master.mgr_emp_id",
+          "destination_field": "employment.managerId",
+          "type_transform": "INT -> ObjectId",
+          "confidence": 0.95,
+          "reasoning": "The source field 'emp_master.mgr_emp_id' is a self-referential foreign key pointing to 'emp_master.emp_id', which is likely the primary key for employees. The candidate 'employment.managerId' is described as a reference to 'employees._id', making it a suitable match for a field that represents a manager's ID within the same entity context. The type transformation from INT to ObjectId is consistent with typical relational to document database migrations.",
+          "notes": "Ensure that the ObjectId in the document database correctly references the employee's unique identifier, which may require transformation logic to map INT to ObjectId.",
+          "relationship_validated": true
+        },
+        {
+          "source_field": "emp_master.job_lvl_cd",
+          "destination_field": "employment.jobLevel",
+          "type_transform": "VARCHAR(10) -> String",
+          "confidence": 0.9,
+          "reasoning": "The source field 'emp_master.job_lvl_cd' and the candidate 'employment.jobLevel' both represent job levels, as indicated by similar examples like L1, IC3, and M1. The semantic meaning aligns well, making 'employment.jobLevel' the best match.",
+          "notes": "The values in 'emp_master.job_lvl_cd' can be directly mapped to 'employment.jobLevel' without transformation, as both fields use similar codes for job levels.",
+          "relationship_validated": true
+        },
+        {
+          "source_field": "emp_master.base_sal",
+          "destination_field": "compensation.baseSalary",
+          "type_transform": "DECIMAL(12,2) -> Number",
+          "confidence": 0.8,
+          "reasoning": "The source field 'emp_master.base_sal' represents the base salary of an employee, which aligns semantically with the destination field 'compensation.baseSalary'. Both fields are related to salary information, and the type transformation from DECIMAL to Number is appropriate for representing monetary values in a document database.",
+          "notes": "Ensure that the precision and scale of the DECIMAL type are handled correctly when converting to a Number type in the document database.",
+          "relationship_validated": true
+        },
+        {
+          "source_field": "emp_master.sal_currency",
+          "destination_field": "compensation.currency",
+          "type_transform": "CHAR(3) -> String",
+          "confidence": 0.9,
+          "reasoning": "The source field 'emp_master.sal_currency' and the candidate 'compensation.currency' both refer to currency codes using the ISO 4217 standard. The type transformation from CHAR(3) to String is appropriate, and the semantic meaning aligns well.",
+          "notes": null,
+          "relationship_validated": false
+        },
+        {
+          "source_field": "emp_master.work_email",
+          "destination_field": "contact.email",
+          "type_transform": "VARCHAR(120) -> String",
+          "confidence": 0.9,
+          "reasoning": "The source field 'emp_master.work_email' is semantically a match for 'contact.email' as both represent email addresses. The type transformation from VARCHAR(120) to String is straightforward and appropriate. The uniqueness constraint on the source field aligns with typical email usage, which often requires uniqueness for identification purposes.",
+          "notes": "Ensure that the email format is validated during migration to maintain data integrity.",
+          "relationship_validated": false
+        },
+        {
+          "source_field": "emp_master.work_phone",
+          "destination_field": "contact.phone",
+          "type_transform": "VARCHAR(20) -> String",
+          "confidence": 0.8,
+          "reasoning": "The source field 'emp_master.work_phone' is a phone number, which semantically aligns with the destination field 'contact.phone'. Both fields are of type String, making them compatible. The other candidates do not relate to phone numbers and are not suitable matches.",
+          "notes": "Ensure phone number formatting is consistent between systems.",
+          "relationship_validated": false
+        },
+        {
+          "source_field": "emp_master.office_loc_id",
+          "destination_field": "location.locationId",
+          "type_transform": "INT -> ObjectId",
+          "confidence": 0.9,
+          "reasoning": "The source field 'emp_master.office_loc_id' is a foreign key reference to 'locations.loc_id', which suggests that it should map to a location identifier in the destination schema. The candidate 'location.locationId' is explicitly noted as a reference to 'locations._id', making it the most semantically appropriate match for this foreign key relationship.",
+          "notes": null,
+          "relationship_validated": true
+        },
+        {
+          "source_field": "emp_master.is_remote",
           "destination_field": "employment.isRemote",
           "type_transform": "TINYINT(1) -> Boolean",
-          "confidence": 0.99,
-          "reasoning": "Simulated mapping for assembly test",
-          "notes": "[TYPE_CAST] Integer 0/1 to Boolean false/true (e.g., 1 -> true)",
+          "confidence": 0.9,
+          "reasoning": "The source field 'emp_master.is_remote' is a TINYINT(1) representing a boolean value (0 or 1), which directly corresponds to the destination field 'employment.isRemote' of type Boolean. The semantic meaning of both fields aligns, as they both indicate whether an employee is remote.",
+          "notes": "The source field uses 0 and 1 to represent false and true, respectively, which should be directly mapped to the Boolean values false and true in the destination.",
+          "relationship_validated": false
+        },
+        {
+          "source_field": "emp_master.rec_stat",
+          "destination_field": "employment.status",
+          "type_transform": "CHAR(1) -> String",
+          "confidence": 0.9,
+          "reasoning": "The source field 'emp_master.rec_stat' represents the employment status with values 'A', 'I', and 'T', which correspond to 'Active', 'Inactive', and 'Terminated'. The destination field 'employment.status' has a similar semantic meaning, representing employment status as 'active', 'inactive', and 'terminated'. This makes it the best match among the candidates.",
+          "notes": "A transformation is needed to map 'A' to 'active', 'I' to 'inactive', and 'T' to 'terminated'.",
+          "relationship_validated": false
+        },
+        {
+          "source_field": "emp_master.created_ts",
+          "destination_field": "meta.createdAt",
+          "type_transform": "DATETIME -> ISODate",
+          "confidence": 0.8,
+          "reasoning": "The source field 'emp_master.created_ts' is a timestamp indicating when the record was created. The candidate 'meta.createdAt' is also a timestamp field, likely used for the same purpose of tracking record creation. The semantic meaning aligns well, and the type transformation from DATETIME to ISODate is appropriate.",
+          "notes": "Ensure the datetime is converted to ISODate format during migration.",
+          "relationship_validated": false
+        },
+        {
+          "source_field": "emp_master.updated_ts",
+          "destination_field": "meta.updatedAt",
+          "type_transform": "DATETIME -> ISODate",
+          "confidence": 0.8,
+          "reasoning": "The source field 'emp_master.updated_ts' represents a timestamp for the last update, which semantically aligns with the destination field 'meta.updatedAt', a common field used to track the last update time in document databases. Both fields are of a datetime type, making this a suitable match.",
+          "notes": "Ensure that the datetime format is correctly transformed from SQL DATETIME to MongoDB's ISODate format.",
           "relationship_validated": false
         }
       ],
       "unmapped_source_fields": [
-        "base_sal",
-        "created_ts",
-        "dept_id",
-        "dob",
-        "emp_cd",
-        "hire_dt",
-        "job_lvl_cd",
-        "l_name",
-        "mgr_emp_id",
-        "office_loc_id",
-        "sal_currency",
-        "term_dt",
-        "updated_ts",
-        "work_email",
-        "work_phone"
+        "dob"
       ],
       "unmapped_destination_fields": [
-        "compensation.baseSalary",
-        "compensation.currency",
-        "contact.email",
-        "contact.phone",
         "department.code",
-        "department.departmentId",
         "department.name",
-        "employeeCode",
-        "employment.endDate",
-        "employment.jobLevel",
-        "employment.managerId",
-        "employment.startDate",
-        "fullName.lastName",
         "location.city",
         "location.code",
         "location.country",
-        "location.locationId",
         "location.name",
-        "location.timezone",
-        "meta.createdAt",
-        "meta.updatedAt"
+        "location.timezone"
       ]
     },
     {
       "source_table": "dept_info",
       "destination_collection": "departments",
-      "confidence": 0.9,
-      "reasoning": "Department info maps to departments collection",
+      "confidence": 0.8214,
+      "reasoning": "The 'dept_info' table has the same number of fields as the 'departments' collection and is likely to contain department-related information.",
       "field_mappings": [
         {
-          "source_field": "dept_cd",
+          "source_field": "dept_info.dept_id",
+          "destination_field": "_id",
+          "type_transform": "INT -> ObjectId",
+          "confidence": 0.8,
+          "reasoning": "The source field 'dept_info.dept_id' is a primary key, which typically maps to the '_id' field in a document database. Although the hybrid score is not very high, '_id' is the most common field used for primary keys in document databases, and it matches the requirement for ID generation strategy.",
+          "notes": "Ensure that an ID generation strategy is implemented to convert INT to ObjectId.",
+          "relationship_validated": true
+        },
+        {
+          "source_field": "dept_info.dept_cd",
           "destination_field": "code",
           "type_transform": "VARCHAR(20) -> String",
-          "confidence": 0.9,
-          "reasoning": "Simulated mapping for assembly test",
-          "notes": null,
+          "confidence": 0.7,
+          "reasoning": "The source field 'dept_info.dept_cd' represents a department code, which semantically matches the destination field 'code'. Both fields are of type String, and the source field's uniqueness constraint aligns with the typical use of a code field. Although the hybrid score is moderate, the semantic alignment justifies the selection.",
+          "notes": "Ensure that the uniqueness constraint is preserved in the destination schema.",
           "relationship_validated": false
-        }
-      ],
-      "unmapped_source_fields": [
-        "cost_ctr_cd",
-        "dept_head_id",
-        "dept_id",
-        "dept_nm",
-        "dept_stat",
-        "parent_dept_id"
-      ],
-      "unmapped_destination_fields": [
-        "_id",
-        "costCenterCode",
-        "headEmployeeId",
-        "isActive",
-        "name",
-        "parentDepartmentId"
-      ]
-    },
-    {
-      "source_table": "locations",
-      "destination_collection": "locations",
-      "confidence": 0.955,
-      "reasoning": "Locations maps directly to locations collection",
-      "field_mappings": [
+        },
         {
-          "source_field": "loc_nm",
+          "source_field": "dept_info.dept_nm",
           "destination_field": "name",
           "type_transform": "VARCHAR(100) -> String",
-          "confidence": 0.92,
-          "reasoning": "Simulated mapping for assembly test",
+          "confidence": 0.7,
+          "reasoning": "The source field 'dept_nm' likely represents the department name, which semantically aligns with the candidate 'name'. Both fields are of string type, and the 'name' candidate has the highest hybrid score among the options, making it the most appropriate match.",
           "notes": null,
           "relationship_validated": false
         },
         {
-          "source_field": "city",
-          "destination_field": "city",
-          "type_transform": "VARCHAR(80) -> String",
-          "confidence": 0.99,
-          "reasoning": "Simulated mapping for assembly test",
+          "source_field": "dept_info.parent_dept_id",
+          "destination_field": "parentDepartmentId",
+          "type_transform": "INT -> ObjectId",
+          "confidence": 0.95,
+          "reasoning": "The source field 'dept_info.parent_dept_id' is a self-referential foreign key that references the same entity, which aligns with the destination field 'parentDepartmentId' that also has a self-referential comment. The type transformation from INT to ObjectId is appropriate given the context of migrating to a document database.",
+          "notes": "Ensure that the INT values are correctly transformed to ObjectId format, possibly involving a lookup or conversion process.",
+          "relationship_validated": true
+        },
+        {
+          "source_field": "dept_info.dept_head_id",
+          "destination_field": "headEmployeeId",
+          "type_transform": "INT -> ObjectId",
+          "confidence": 0.9,
+          "reasoning": "The source field 'dept_info.dept_head_id' is a foreign key reference to 'emp_master.emp_id', which aligns with the candidate 'headEmployeeId' that references 'employees._id'. This suggests a direct relationship between department heads and employees, making 'headEmployeeId' the most semantically appropriate match.",
+          "notes": "Requires transformation from INT to ObjectId, assuming 'emp_id' maps to '_id' in the employees collection.",
+          "relationship_validated": true
+        },
+        {
+          "source_field": "dept_info.cost_ctr_cd",
+          "destination_field": "costCenterCode",
+          "type_transform": "VARCHAR(20) -> String",
+          "confidence": 0.9,
+          "reasoning": "The source field 'dept_info.cost_ctr_cd' represents a finance cost center code, which directly matches the candidate 'costCenterCode'. Both fields are semantically aligned and have compatible types, making this a straightforward match.",
           "notes": null,
+          "relationship_validated": false
+        },
+        {
+          "source_field": "dept_info.dept_stat",
+          "destination_field": "isActive",
+          "type_transform": "CHAR(1) -> Boolean",
+          "confidence": 0.8,
+          "reasoning": "The source field 'dept_info.dept_stat' uses a CHAR(1) to represent department status with 'A' for Active and 'I' for Inactive. The destination field 'isActive' is a Boolean, which semantically matches the active/inactive status. This requires a transformation from CHAR(1) to Boolean, where 'A' becomes true and 'I' becomes false.",
+          "notes": "Transform 'A' to true and 'I' to false for the Boolean field.",
           "relationship_validated": false
         }
       ],
+      "unmapped_source_fields": [],
+      "unmapped_destination_fields": []
+    },
+    {
+      "source_table": "locations",
+      "destination_collection": "locations",
+      "confidence": 0.7188,
+      "reasoning": "The 'locations' table matches directly with the 'locations' collection, both having the same name and number of fields.",
+      "field_mappings": [
+        {
+          "source_field": "locations.loc_id",
+          "destination_field": "_id",
+          "type_transform": "INT -> ObjectId",
+          "confidence": 0.8,
+          "reasoning": "The source field 'locations.loc_id' is a primary key and thus uniquely identifies records. In a document database, the '_id' field serves as the unique identifier for documents, making it the most appropriate match. The type transformation from INT to ObjectId is common when migrating primary keys to document databases.",
+          "notes": "Ensure that the INT primary key is correctly transformed to ObjectId, potentially using a conversion strategy or tool.",
+          "relationship_validated": true
+        },
+        {
+          "source_field": "locations.loc_cd",
+          "destination_field": null,
+          "type_transform": "VARCHAR(20) -> String",
+          "confidence": 0.2,
+          "reasoning": "The source field 'locations.loc_cd' is a unique code that could potentially match any of the candidates, but none of the candidates have a strong semantic alignment with a location code. The candidate 'country' suggests ISO 3166-1 alpha-2 codes which are country codes, not necessarily location codes, and 'code' is too generic. 'postalCode' is not applicable as it refers to postal codes, not general location codes.",
+          "notes": "The source field represents a unique location code, but without more context, it doesn't clearly map to any of the provided candidates.",
+          "relationship_validated": false
+        },
+        {
+          "source_field": "locations.loc_nm",
+          "destination_field": "name",
+          "type_transform": "VARCHAR(100) -> String",
+          "confidence": 0.7,
+          "reasoning": "The source field 'locations.loc_nm' likely represents a location name, which semantically aligns with the candidate field 'name'. Both fields are of type String, and 'name' is a generic field that can accommodate location names. The other candidates, 'country' and 'postalCode', do not match the semantic meaning of a location name.",
+          "notes": "Ensure that the location name fits within any constraints or expectations of the 'name' field in the destination schema.",
+          "relationship_validated": false
+        },
+        {
+          "source_field": "locations.city",
+          "destination_field": "city",
+          "type_transform": "VARCHAR(80) -> String",
+          "confidence": 0.8,
+          "reasoning": "The source field 'locations.city' and the destination field 'city' both refer to a city name, making them semantically equivalent. The type transformation from VARCHAR(80) to String is appropriate, and despite the low confidence prior, the hybrid score is the highest among the candidates, indicating a better match.",
+          "notes": null,
+          "relationship_validated": false
+        },
+        {
+          "source_field": "locations.state_prov",
+          "destination_field": "stateOrProvince",
+          "type_transform": "VARCHAR(80) -> String",
+          "confidence": 0.85,
+          "reasoning": "The source field 'locations.state_prov' is intended to store state or province names, which aligns semantically with the destination field 'stateOrProvince'. The type transformation from 'VARCHAR(80)' to 'String' is straightforward and appropriate. The hybrid score for 'stateOrProvince' is slightly lower than 'country', but the semantic match is much stronger, making it the best choice.",
+          "notes": null,
+          "relationship_validated": false
+        },
+        {
+          "source_field": "locations.country_cd",
+          "destination_field": "country",
+          "type_transform": "CHAR(2) -> String",
+          "confidence": 0.9,
+          "reasoning": "The source field 'locations.country_cd' and the candidate 'country' both reference ISO 3166-1 alpha-2 codes, which are 2-character country codes. This makes 'country' a strong semantic match for the source field. The matching comments further confirm this alignment.",
+          "notes": null,
+          "relationship_validated": false
+        },
+        {
+          "source_field": "locations.postal_cd",
+          "destination_field": "postalCode",
+          "type_transform": "VARCHAR(20) -> String",
+          "confidence": 0.8,
+          "reasoning": "The source field 'locations.postal_cd' is a postal code, which directly corresponds to the candidate 'postalCode'. The types are compatible, and the semantic meaning aligns well.",
+          "notes": null,
+          "relationship_validated": true
+        },
+        {
+          "source_field": "locations.tz_cd",
+          "destination_field": "timezone",
+          "type_transform": "VARCHAR(50) -> String",
+          "confidence": 0.7,
+          "reasoning": "The source field 'locations.tz_cd' is described as an IANA timezone, which matches the candidate 'timezone'. The types are compatible, and the semantic meaning aligns well. The other candidate 'country' is not relevant as it refers to country codes.",
+          "notes": null,
+          "relationship_validated": true
+        }
+      ],
       "unmapped_source_fields": [
-        "country_cd",
-        "loc_cd",
-        "loc_id",
-        "postal_cd",
-        "state_prov",
-        "tz_cd"
+        "loc_cd"
       ],
       "unmapped_destination_fields": [
-        "_id",
-        "code",
-        "country",
-        "postalCode",
-        "stateOrProvince",
-        "timezone"
+        "code"
       ]
     }
   ]

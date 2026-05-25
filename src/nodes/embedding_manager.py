@@ -18,6 +18,15 @@ from numpy.typing import NDArray
 from rapidfuzz import fuzz
 from sentence_transformers import SentenceTransformer
 
+from src.constants import (
+    CONFIDENCE_HIGH_THRESHOLD,
+    CONFIDENCE_MEDIUM_THRESHOLD,
+    EMBEDDING_WEIGHT,
+    LEXICAL_WEIGHT,
+    RETRIEVAL_THRESHOLD,
+    RETRIEVAL_TOP_K,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -152,11 +161,11 @@ class EmbeddingManager:
         self,
         embedding_sim: float,
         lexical_sim: float,
-        embedding_weight: float = 0.8,
+        embedding_weight: float = EMBEDDING_WEIGHT,
     ) -> float:
         """Compute weighted hybrid score.
 
-        Default: 0.8 * embedding_similarity + 0.2 * lexical_similarity
+        Default: EMBEDDING_WEIGHT * embedding + LEXICAL_WEIGHT * lexical
 
         Args:
             embedding_sim: Cosine similarity score (0-1)
@@ -179,8 +188,8 @@ class EmbeddingManager:
         source_field_name: str,
         collection_filter: str | None = None,
         collection_names: list[str] | None = None,
-        top_k: int = 3,
-        threshold: float = 0.40,
+        top_k: int = RETRIEVAL_TOP_K,
+        threshold: float = RETRIEVAL_THRESHOLD,
     ) -> list[dict]:
         """Retrieve top candidate matches for a source field.
 
@@ -221,9 +230,9 @@ class EmbeddingManager:
 
             if h_score >= threshold:
                 # Assign confidence prior
-                if h_score > 0.90:
+                if h_score > CONFIDENCE_HIGH_THRESHOLD:
                     prior = "HIGH"
-                elif h_score >= 0.75:
+                elif h_score >= CONFIDENCE_MEDIUM_THRESHOLD:
                     prior = "MEDIUM"
                 else:
                     prior = "LOW"

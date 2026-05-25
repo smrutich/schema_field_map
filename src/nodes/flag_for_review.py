@@ -21,17 +21,15 @@ from pathlib import Path
 from typing import Any
 
 from src.state import PipelineState
+from src.constants import LOW_CONFIDENCE_THRESHOLD
 
 logger = logging.getLogger(__name__)
-
-# Confidence threshold for flagging
-_LOW_CONFIDENCE_THRESHOLD = 0.75
 
 
 def should_flag_for_review(state: PipelineState) -> bool:
     """Conditional edge check: are there any low-confidence mappings?"""
     field_mappings = state.get("field_mappings", [])
-    return any(fm.confidence < _LOW_CONFIDENCE_THRESHOLD for fm in field_mappings)
+    return any(fm.confidence < LOW_CONFIDENCE_THRESHOLD for fm in field_mappings)
 
 
 def flag_for_review(state: PipelineState) -> PipelineState:
@@ -52,15 +50,17 @@ def flag_for_review(state: PipelineState) -> PipelineState:
     source_fields = state["source_fields"]
 
     # Build field_name -> table lookup
+    # Handle both "field_name" and "table.field_name" formats from LLM
     field_to_table: dict[str, str] = {}
     for sf in source_fields:
         field_to_table[sf.field_name] = sf.table_name
+        field_to_table[f"{sf.table_name}.{sf.field_name}"] = sf.table_name
 
     # Collect low-confidence mappings
     flags: list[dict[str, Any]] = []
 
     for fm in field_mappings:
-        if fm.confidence >= _LOW_CONFIDENCE_THRESHOLD:
+        if fm.confidence >= LOW_CONFIDENCE_THRESHOLD:
             continue
 
         # Find candidate alternatives (top-2 not chosen)
@@ -97,7 +97,7 @@ def flag_for_review(state: PipelineState) -> PipelineState:
 
     logger.info(
         f"flag_for_review: {len(flags)} low-confidence mappings "
-        f"(< {_LOW_CONFIDENCE_THRESHOLD}) written to {output_path}"
+        f"(< {LOW_CONFIDENCE_THRESHOLD}) written to {output_path}"
     )
 
     return state

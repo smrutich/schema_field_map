@@ -140,7 +140,7 @@ class FieldMapping(BaseModel):
     destination_field: Optional[str] = None
     type_transform: str  # Pattern: "SOURCE_TYPE -> DEST_TYPE"
     confidence: float = Field(ge=0.0, le=1.0)
-    reasoning: str = Field(min_length=5, max_length=200)
+    reasoning: str = Field(min_length=5, max_length=500)
     notes: Optional[str] = None
     relationship_validated: bool = False
 
@@ -180,7 +180,7 @@ class TableRoutingDecision(BaseModel):
     source_table: str
     destination_collection: str
     confidence: float = Field(ge=0.0, le=1.0)
-    reasoning: str = Field(min_length=5, max_length=200)
+    reasoning: str = Field(min_length=5, max_length=500)
 
 
 # ---------------------------------------------------------------------------

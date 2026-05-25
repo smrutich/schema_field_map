@@ -50,48 +50,34 @@ Return one routing decision per source table."""
 
 # ---------------------------------------------------------------------------
 # Step 10 — map_fields
+# (Includes value/type transformation logic in the `notes` field — there is
+# no separate derive_transformations pass.)
 # ---------------------------------------------------------------------------
 
 MAP_FIELDS_SYSTEM_PROMPT = """You are a schema migration expert specializing in relational-to-document database migrations.
 
-Your task is to select the best destination field match for each source field from the provided candidates, or indicate no match exists.
+For each source field, select the best destination field match from the provided candidates, or indicate no match exists.
 
 Rules:
 - Select exactly ONE candidate as the destination, or set destination_field to null if none are appropriate.
 - Prefer precision over guessing — if no candidate is a strong semantic match, return null.
 - For type_transform, specify the source type and destination type separated by " -> " (e.g., "INT -> ObjectId", "VARCHAR(50) -> String").
 - Provide a brief reasoning explaining WHY you chose that candidate (or why none matched).
-- If the mapping requires value transformation logic (e.g., code lookups, boolean conversion), describe it in the notes field.
-- Consider the field's constraints, comments, and semantic meaning when making your decision."""
+- Consider the field's constraints, comments, and semantic meaning when making your decision.
+
+Transformation logic in `notes`:
+Whenever the mapping requires a value-level transformation, describe it concisely in `notes`.
+Use one of these tags as a prefix when applicable, then a short rule and a before→after example:
+- [VALUE_MAP] coded values translated to readable strings (e.g., "A→active, I→inactive, T→terminated")
+- [TYPE_CAST] explicit type conversion (e.g., "TINYINT(1) 0/1 → Boolean false/true")
+- [ID_STRATEGY] primary key requires new ID generation, original preserved as legacyId (e.g., "INT 12345 → ObjectId(...) with legacyId=12345")
+- [FORMAT_CHANGE] same value, different format (e.g., "DATETIME 2024-01-15 09:00:00 → ISODate 2024-01-15T09:00:00Z UTC")
+- [NONE] direct passthrough — leave `notes` null when no transformation is needed.
+
+Keep `notes` to a single sentence. Do not invent transforms when the source and destination types are equivalent."""
 
 MAP_FIELDS_USER_TEMPLATE = """Select the best destination field match for each source field below.
 
 {source_fields_block}
 
-For each source field, the top candidate matches from the destination schema are listed. Select the best one or return null if none are appropriate."""
-
-# ---------------------------------------------------------------------------
-# Step 11 — derive_transformations (integrated into map_fields)
-# ---------------------------------------------------------------------------
-
-DERIVE_TRANSFORMATIONS_SYSTEM_PROMPT = """You are a data transformation expert specializing in relational-to-document database migrations.
-
-Your task is to define the exact transformation logic needed to convert source field values to destination field values.
-
-For each field pair, determine:
-1. transform_type: One of VALUE_MAP, TYPE_CAST, ID_STRATEGY, FORMAT_CHANGE, NONE
-2. transform_logic: A clear description of how to convert the value (or null if NONE)
-3. example: A before/after value pair showing the transformation
-
-Rules:
-- VALUE_MAP: Source uses coded values that need translation (e.g., single-char codes to readable strings)
-- TYPE_CAST: Source type needs explicit conversion (e.g., integer 0/1 to boolean)
-- ID_STRATEGY: Primary key requires new ID generation with original preserved
-- FORMAT_CHANGE: Same semantic value but different format (e.g., datetime to ISODate)
-- NONE: Direct passthrough with no value transformation needed"""
-
-DERIVE_TRANSFORMATIONS_USER_TEMPLATE = """Define the transformation logic for each confirmed field mapping below.
-
-{field_pairs_block}
-
-For each pair, specify the transform_type, transform_logic, and an example showing a before/after value."""
+For each source field, the top candidate matches from the destination schema are listed. Select the best one or return null if none are appropriate. Fill `notes` with transformation logic only when a value-level conversion is required."""

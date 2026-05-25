@@ -98,9 +98,11 @@ def assemble_output(state: PipelineState) -> PipelineState:
         routing_reasoning[rd.source_table] = rd.reasoning
 
     # Build source field -> table lookup
+    # Handle both "field_name" and "table.field_name" formats from LLM
     field_to_table: dict[str, str] = {}
     for sf in source_fields:
         field_to_table[sf.field_name] = sf.table_name
+        field_to_table[f"{sf.table_name}.{sf.field_name}"] = sf.table_name
 
     # Group mappings by source table
     table_groups: dict[str, list[FieldMapping]] = {}
@@ -129,7 +131,13 @@ def assemble_output(state: PipelineState) -> PipelineState:
         mean_confidence = sum(confidences) / len(confidences) if confidences else 0.0
 
         # Identify unmapped source fields
-        mapped_source = {fm.source_field for fm in mappings if fm.destination_field}
+        # Handle LLM returning "table.field" or just "field" in source_field
+        mapped_source: set[str] = set()
+        for fm in mappings:
+            if fm.destination_field:
+                # Strip table prefix if present
+                sf_name = fm.source_field.split(".")[-1] if "." in fm.source_field else fm.source_field
+                mapped_source.add(sf_name)
         all_source = source_fields_by_table.get(source_table, set())
         unmapped_source = sorted(all_source - mapped_source)
 

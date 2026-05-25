@@ -34,11 +34,12 @@ from src.prompts import (
     MAP_FIELDS_USER_TEMPLATE,
 )
 from src.state import PipelineState
+from src.constants import MAP_FIELDS_BATCH_SIZE, TRANSFORM_BATCH_SIZE
 
 logger = logging.getLogger(__name__)
 
 # Maximum fields per batched LLM call
-_BATCH_SIZE = 5
+_BATCH_SIZE = MAP_FIELDS_BATCH_SIZE
 
 
 # ---------------------------------------------------------------------------
@@ -427,7 +428,7 @@ def _derive_transformations(
 
     # Batch non-trivial mappings into LLM calls (up to 10 per call)
     llm_rules: list[TransformationRule] = []
-    batch_size = 10
+    batch_size = TRANSFORM_BATCH_SIZE
 
     for i in range(0, len(needs_llm), batch_size):
         batch = needs_llm[i : i + batch_size]

@@ -16,7 +16,7 @@ from langgraph.graph import END, StateGraph
 from src.clients import LLMManager
 from src.nodes.assemble_output import assemble_output
 from src.nodes.build_semantic_profiles import build_semantic_profiles
-from src.nodes.convert_raw_schema import parse_schemas
+from src.nodes.parse_schemas import parse_schemas
 from src.nodes.embed_destination_fields import embed_destination_fields
 from src.nodes.embedding_manager import EmbeddingManager
 from src.nodes.flag_for_review import flag_for_review, should_flag_for_review

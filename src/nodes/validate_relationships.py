@@ -23,6 +23,7 @@ from typing import Any
 
 from src.models import FieldMapping, SourceField
 from src.state import PipelineState
+from src.constants import FK_CONFIDENCE_BOOST, MAX_CONFIDENCE
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +61,11 @@ def validate_relationships(state: PipelineState) -> PipelineState:
         dest_type_lookup[df.path] = df.bson_type
 
     # Build source field lookup: field_name -> SourceField (may have dupes across tables)
+    # Handle both "field_name" and "table.field_name" formats from LLM
     source_by_name: dict[str, list[SourceField]] = {}
     for sf in source_fields:
         source_by_name.setdefault(sf.field_name, []).append(sf)
+        source_by_name.setdefault(f"{sf.table_name}.{sf.field_name}", []).append(sf)
 
     # Build FK info: identify source fields that have FK constraints
     # Structure: (table_name, field_name) -> fk_target "table.field"
@@ -139,8 +142,8 @@ def validate_relationships(state: PipelineState) -> PipelineState:
                 aligned = True  # ObjectId destination is a reasonable FK target
 
         if aligned:
-            # Boost confidence by +0.10, capped at 1.0
-            new_confidence = min(fm.confidence + 0.10, 1.0)
+            # Boost confidence, capped at MAX_CONFIDENCE
+            new_confidence = min(fm.confidence + FK_CONFIDENCE_BOOST, MAX_CONFIDENCE)
             updated_fm = FieldMapping(
                 source_field=fm.source_field,
                 destination_field=fm.destination_field,
